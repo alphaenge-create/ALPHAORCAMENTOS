@@ -15,16 +15,11 @@ import {
   precoKey,
 } from "./utils/calculos";
 import { fmt, norm, num, uid } from "./utils/format";
+import { loadGoogleDriveSnapshot, requestGoogleDriveAccess, saveGoogleDriveSnapshot } from "./services/googleDriveStore";
 import {
-  clearCloudSyncBlock,
-  getCloudSyncBlockedUntil,
-  isCloudSyncBlocked,
-  isQuotaError,
   loadLocalSnapshot,
   loadOrcamentoData,
-  markCloudSyncBlocked,
   saveLocalSnapshot,
-  saveOrcamentoData,
 } from "./services/orcamentoStore";
 export default function App() {
   const [tab, setTab] = useState("projetos");
@@ -35,6 +30,7 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [driveConnected, setDriveConnected] = useState(false);
   const fileInputRef = useRef(null);
   const cpuHashesRef = useRef({});
   const [cpusDirty, setCpusDirty] = useState(false);
@@ -68,12 +64,20 @@ export default function App() {
     setStatus("Dados carregados do Firebase.");
   };
 
-  const carregarDados = async () => {
+  const carregarDados = async ({ usarDrive = true } = {}) => {
     setBusy(true);
     setStatus("Carregando...");
     try {
-      const data = await loadOrcamentoData();
-      aplicarDadosCarregados(data);
+      const driveData = usarDrive ? await loadGoogleDriveSnapshot() : null;
+      if (usarDrive && driveData) {
+        aplicarDadosCarregados(driveData);
+        await saveLocalSnapshot(driveData);
+        setDriveConnected(true);
+        setStatus("Dados carregados do Google Drive.");
+      } else {
+        const data = await loadOrcamentoData();
+        aplicarDadosCarregados(data);
+      }
     } catch (e) {
       console.error("Erro ao carregar Firestore:", e);
       try {
@@ -100,43 +104,43 @@ export default function App() {
     setStatus("Salvando backup local...");
     try {
       await saveLocalSnapshot({ cpus, projetos, precos, projetoAtivoId });
-
-      if (isCloudSyncBlocked()) {
-        const blockedUntil = new Date(getCloudSyncBlockedUntil()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-        setStatus(`Salvo localmente. Firebase em pausa por cota ate ${blockedUntil}.`);
-        return;
-      }
-
-      setStatus("Backup local salvo. Sincronizando nuvem...");
-      const result = await saveOrcamentoData({
+      setStatus("Backup local salvo. Sincronizando Google Drive...");
+      await saveGoogleDriveSnapshot({
         cpus,
         projetos,
         precos,
         projetoAtivoId,
-        previousCpuHashes: cpuHashesRef.current,
-        includeCpus: cpusDirty,
       });
-      clearCloudSyncBlock();
-      cpuHashesRef.current = result.cpuHashes || {};
+      setDriveConnected(true);
       setCpusDirty(false);
-      setStatus(result.cpusSalvas ? `Salvo local e na nuvem. ${result.cpusSalvas} CPU(s) atualizada(s).` : "Salvo local e na nuvem.");
+      setStatus("Salvo localmente e no Google Drive.");
     } catch (e) {
-      console.error("Erro real ao salvar no Firestore:", e);
-      if (isQuotaError(e)) {
-        markCloudSyncBlocked();
-        setStatus("Salvo localmente. Cota do Firebase excedida; a nuvem fica em pausa por algumas horas.");
-      } else {
-        setStatus("Salvo localmente. Falha ao sincronizar nuvem: " + (e?.message || e));
-      }
+      console.error("Erro ao salvar no Google Drive:", e);
+      setStatus("Salvo localmente. Falha ao sincronizar Google Drive: " + (e?.message || e));
     } finally {
       setBusy(false);
       setTimeout(() => setStatus(""), 12000);
     }
   };
 
+  const conectarGoogleDrive = async () => {
+    setBusy(true);
+    setStatus("Conectando Google Drive...");
+    try {
+      await requestGoogleDriveAccess();
+      setDriveConnected(true);
+      setStatus("Google Drive conectado.");
+    } catch (e) {
+      setStatus("Falha ao conectar Drive: " + (e?.message || e));
+    } finally {
+      setBusy(false);
+      setTimeout(() => setStatus(""), 8000);
+    }
+  };
+
   // Carrega uma vez ao abrir. Depois disso, salvar/carregar sao acoes manuais.
   useEffect(() => {
-    carregarDados();
+    carregarDados({ usarDrive: false });
   }, []);
   
   // Projeto Corrente Detectado
@@ -351,10 +355,23 @@ export default function App() {
             <span className="text-xs text-stone-400 min-h-4">{status}</span>
             <button
               type="button"
-              onClick={carregarDados}
+              onClick={conectarGoogleDrive}
+              disabled={busy}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+                driveConnected
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-stone-300 bg-white hover:bg-stone-50 text-stone-700"
+              }`}
+              title="Conectar sua conta Google para salvar no Drive"
+            >
+              <LogIn size={13} /> {driveConnected ? "Drive conectado" : "Conectar Drive"}
+            </button>
+            <button
+              type="button"
+              onClick={() => carregarDados({ usarDrive: true })}
               disabled={busy}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-300 rounded-lg font-medium bg-white hover:bg-stone-50 text-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Carregar dados salvos no Firebase"
+              title="Carregar dados salvos no Google Drive"
             >
               <RefreshCw size={13} className={busy ? "animate-spin" : ""} /> Carregar
             </button>
@@ -363,7 +380,7 @@ export default function App() {
               onClick={salvarDados}
               disabled={busy || !loaded}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-900 rounded-lg font-medium bg-stone-900 hover:bg-stone-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Salvar dados atuais no Firebase"
+              title="Salvar dados atuais no Google Drive"
             >
               <Save size={13} /> Salvar
             </button>
