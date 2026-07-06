@@ -10,6 +10,9 @@ const BATCH_SIZE = 400;
 const SAVE_TIMEOUT_MS = 30000;
 const CHUNK_SIZE = 700000;
 const CHUNK_ENCODING = "gzip-base64";
+const LOCAL_DB_NAME = "alphaorc-local";
+const LOCAL_STORE_NAME = "snapshots";
+const LOCAL_SNAPSHOT_KEY = "ultimo";
 
 const firestoreRestUrl = (path) => {
   const encodedPath = path.split("/").map(encodeURIComponent).join("/");
@@ -59,6 +62,49 @@ async function restSetDoc(path, data) {
 const cpuHash = (cpu) => JSON.stringify(sanitize(cpu));
 const buildCpuHashes = (cpus = []) =>
   Object.fromEntries((cpus || []).map((cpu) => [cpu.id, cpuHash(cpu)]));
+
+const openLocalDb = () =>
+  new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB indisponivel neste navegador."));
+      return;
+    }
+
+    const request = indexedDB.open(LOCAL_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(LOCAL_STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+const localDbOp = async (mode, operation) => {
+  const dbLocal = await openLocalDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = dbLocal.transaction(LOCAL_STORE_NAME, mode);
+      const store = tx.objectStore(LOCAL_STORE_NAME);
+      const request = operation(store);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    dbLocal.close();
+  }
+};
+
+export async function saveLocalSnapshot(data) {
+  const snapshot = sanitize({
+    ...data,
+    savedAt: new Date().toISOString(),
+  });
+  await localDbOp("readwrite", (store) => store.put(snapshot, LOCAL_SNAPSHOT_KEY));
+}
+
+export async function loadLocalSnapshot() {
+  return await localDbOp("readonly", (store) => store.get(LOCAL_SNAPSHOT_KEY));
+}
 
 const withTimeout = (promise, label) =>
   Promise.race([

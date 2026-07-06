@@ -15,7 +15,7 @@ import {
   precoKey,
 } from "./utils/calculos";
 import { fmt, norm, num, uid } from "./utils/format";
-import { loadOrcamentoData, saveOrcamentoData } from "./services/orcamentoStore";
+import { loadLocalSnapshot, loadOrcamentoData, saveLocalSnapshot, saveOrcamentoData } from "./services/orcamentoStore";
 export default function App() {
   const [tab, setTab] = useState("projetos");
   const [cpus, setCpusState] = useState([]);
@@ -66,7 +66,18 @@ export default function App() {
       aplicarDadosCarregados(data);
     } catch (e) {
       console.error("Erro ao carregar Firestore:", e);
-      setStatus("Falha ao carregar: " + (e?.message || e));
+      try {
+        const local = await loadLocalSnapshot();
+        if (local) {
+          aplicarDadosCarregados(local);
+          setStatus("Firebase indisponivel. Dados carregados do backup local deste navegador.");
+        } else {
+          setStatus("Falha ao carregar: " + (e?.message || e));
+        }
+      } catch (localError) {
+        console.error("Erro ao carregar backup local:", localError);
+        setStatus("Falha ao carregar: " + (e?.message || e));
+      }
     } finally {
       setLoaded(true);
       setBusy(false);
@@ -76,8 +87,10 @@ export default function App() {
 
   const salvarDados = async () => {
     setBusy(true);
-    setStatus("Salvando...");
+    setStatus("Salvando backup local...");
     try {
+      await saveLocalSnapshot({ cpus, projetos, precos, projetoAtivoId });
+      setStatus("Backup local salvo. Sincronizando nuvem...");
       const result = await saveOrcamentoData({
         cpus,
         projetos,
@@ -88,13 +101,13 @@ export default function App() {
       });
       cpuHashesRef.current = result.cpuHashes || {};
       setCpusDirty(false);
-      setStatus(result.cpusSalvas ? `Salvo no Firebase. ${result.cpusSalvas} CPU(s) atualizada(s).` : "Salvo no Firebase.");
+      setStatus(result.cpusSalvas ? `Salvo local e na nuvem. ${result.cpusSalvas} CPU(s) atualizada(s).` : "Salvo local e na nuvem.");
     } catch (e) {
       console.error("Erro real ao salvar no Firestore:", e);
-      setStatus("Falha ao salvar: " + (e?.message || e));
+      setStatus("Salvo localmente. Falha ao sincronizar nuvem: " + (e?.message || e));
     } finally {
       setBusy(false);
-      setTimeout(() => setStatus(""), 5000);
+      setTimeout(() => setStatus(""), 12000);
     }
   };
 
