@@ -5,9 +5,10 @@ import { sanitize } from "../utils/format";
 const ROOT_COLLECTION = "orcacpu";
 const CPUS_COLLECTION = "orcacpu_cpus";
 const CHUNKS_COLLECTION = "orcacpu_chunks";
+const PROJECT_CHUNKS_PREFIX = "projeto";
 const BATCH_SIZE = 400;
 const SAVE_TIMEOUT_MS = 90000;
-const CHUNK_SIZE = 250000;
+const CHUNK_SIZE = 700000;
 const CHUNK_ENCODING = "gzip-base64";
 
 const cpuHash = (cpu) => JSON.stringify(sanitize(cpu));
@@ -106,8 +107,44 @@ async function readChunkedData(name) {
   return json ? JSON.parse(json) : null;
 }
 
+const projectChunkName = (id) => `${PROJECT_CHUNKS_PREFIX}_${id}`;
+
+const projetoResumo = (p) => ({
+  id: p.id,
+  nome: p.nome,
+  cliente: p.cliente,
+});
+
+async function loadProjetosV3() {
+  const metaSnap = await getDoc(doc(db, ROOT_COLLECTION, "projetos_index_v3"));
+  if (!metaSnap.exists()) return null;
+
+  const meta = metaSnap.data();
+  const ids = meta.projetoIds || [];
+  const projetos = await Promise.all(ids.map((id) => readChunkedData(projectChunkName(id))));
+  return {
+    projetos: projetos.filter(Boolean),
+    projetoAtivoId: meta.projetoAtivoId || ids[0] || "",
+  };
+}
+
+async function saveProjetosV3(projetos, projetoAtivoId) {
+  await setDoc(doc(db, ROOT_COLLECTION, "projetos_index_v3"), {
+    projetoAtivoId,
+    projetoIds: (projetos || []).map((p) => p.id),
+    resumos: (projetos || []).map(projetoResumo),
+    updatedAt: new Date().toISOString(),
+  });
+
+  for (let i = 0; i < (projetos || []).length; i += 1) {
+    const projeto = projetos[i];
+    await writeChunkedData(projectChunkName(projeto.id), projeto);
+  }
+}
+
 export async function loadOrcamentoData() {
-  const [chunkedProjetos, chunkedPrecos, snapProjetos, snapMeta, snapPrecos] = await Promise.all([
+  const [projetosV3, chunkedProjetos, chunkedPrecos, snapProjetos, snapMeta, snapPrecos] = await Promise.all([
+    loadProjetosV3(),
     readChunkedData("projetos"),
     readChunkedData("precos"),
     getDoc(doc(db, ROOT_COLLECTION, "projetos")),
@@ -115,14 +152,14 @@ export async function loadOrcamentoData() {
     getDoc(doc(db, ROOT_COLLECTION, "precos")),
   ]);
 
-  if (!chunkedProjetos && !snapProjetos.exists()) {
+  if (!projetosV3 && !chunkedProjetos && !snapProjetos.exists()) {
     return { empty: true };
   }
 
   const cpuIds = snapMeta.exists() ? snapMeta.data().cpuIds || [] : [];
   const cpuSnaps = await Promise.all(cpuIds.map((id) => getDoc(doc(db, CPUS_COLLECTION, id))));
   const cpus = cpuSnaps.filter((s) => s.exists()).map((s) => s.data());
-  const projetosData = chunkedProjetos || snapProjetos.data() || {};
+  const projetosData = projetosV3 || chunkedProjetos || snapProjetos.data() || {};
   const precosData = chunkedPrecos || (snapPrecos.exists() ? snapPrecos.data() : {});
 
   return {
@@ -145,7 +182,7 @@ export async function saveOrcamentoData({
 }) {
   await withTimeout(
     Promise.all([
-      writeChunkedData("projetos", { projetos, projetoAtivoId }),
+      saveProjetosV3(projetos, projetoAtivoId),
       writeChunkedData("precos", { precos }),
     ]),
     "Salvamento do orcamento"
