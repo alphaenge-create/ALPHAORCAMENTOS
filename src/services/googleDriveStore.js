@@ -2,12 +2,13 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DRIVE_FOLDER_NAME = "AlphaOrcamentos";
 const DRIVE_BACKUP_NAME = "alphaorc-backup.json.gz";
 const CLIENT_ID_KEY = "alphaorc-google-client-id";
+const DEFAULT_GOOGLE_CLIENT_ID = "376035181065-3gdnkppglnag1s1u3ue7kkflfe2iv5ln.apps.googleusercontent.com";
 
 let tokenClient = null;
 let accessToken = "";
 
 const getClientId = () => {
-  const configured = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+  const configured = import.meta.env.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
   if (configured && configured !== "COLE_SEU_CLIENT_ID_AQUI") return configured;
   return localStorage.getItem(CLIENT_ID_KEY) || "";
 };
