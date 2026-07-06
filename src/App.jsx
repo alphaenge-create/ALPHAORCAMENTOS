@@ -18,7 +18,7 @@ import { fmt, norm, num, uid } from "./utils/format";
 import { loadOrcamentoData, saveOrcamentoData } from "./services/orcamentoStore";
 export default function App() {
   const [tab, setTab] = useState("projetos");
-  const [cpus, setCpus] = useState([]);
+  const [cpus, setCpusState] = useState([]);
   const [projetos, setProjetos] = useState([]);
   const [projetoAtivoId, setProjetoAtivoId] = useState("");
   const [precos, setPrecos] = useState([]);
@@ -27,14 +27,21 @@ export default function App() {
   const [status, setStatus] = useState("");
   const fileInputRef = useRef(null);
   const cpuHashesRef = useRef({});
+  const [cpusDirty, setCpusDirty] = useState(false);
   // Novos estados para controle de recolhimento/expansão das camadas
   const [etapasExpandidas, setEtapasExpandidas] = useState({});
   const [cpusExpandidas, setCpusExpandidas] = useState({});
 
+  const setCpus = (nextCpus) => {
+    setCpusDirty(true);
+    setCpusState(nextCpus);
+  };
+
   const aplicarDadosCarregados = (data) => {
     if (data.empty) {
       const defaultProj = createDefaultProject();
-      setCpus(seedCpus());
+      setCpusState(seedCpus());
+      setCpusDirty(true);
       setProjetos([defaultProj]);
       setPrecos([]);
       setProjetoAtivoId(defaultProj.id);
@@ -42,8 +49,9 @@ export default function App() {
       return;
     }
 
-    setCpus(data.cpus || []);
+    setCpusState(data.cpus || []);
     cpuHashesRef.current = data.cpuHashes || {};
+    setCpusDirty(false);
     setProjetos(data.projetos || []);
     setPrecos(data.precos || []);
     setProjetoAtivoId(data.projetoAtivoId || "");
@@ -70,8 +78,16 @@ export default function App() {
     setBusy(true);
     setStatus("Salvando...");
     try {
-      const result = await saveOrcamentoData({ cpus, projetos, precos, projetoAtivoId, previousCpuHashes: cpuHashesRef.current });
+      const result = await saveOrcamentoData({
+        cpus,
+        projetos,
+        precos,
+        projetoAtivoId,
+        previousCpuHashes: cpuHashesRef.current,
+        includeCpus: cpusDirty,
+      });
       cpuHashesRef.current = result.cpuHashes || {};
+      setCpusDirty(false);
       setStatus(result.cpusSalvas ? `Salvo no Firebase. ${result.cpusSalvas} CPU(s) atualizada(s).` : "Salvo no Firebase.");
     } catch (e) {
       console.error("Erro real ao salvar no Firestore:", e);
