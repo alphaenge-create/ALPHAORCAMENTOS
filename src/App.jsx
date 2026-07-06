@@ -15,7 +15,17 @@ import {
   precoKey,
 } from "./utils/calculos";
 import { fmt, norm, num, uid } from "./utils/format";
-import { loadLocalSnapshot, loadOrcamentoData, saveLocalSnapshot, saveOrcamentoData } from "./services/orcamentoStore";
+import {
+  clearCloudSyncBlock,
+  getCloudSyncBlockedUntil,
+  isCloudSyncBlocked,
+  isQuotaError,
+  loadLocalSnapshot,
+  loadOrcamentoData,
+  markCloudSyncBlocked,
+  saveLocalSnapshot,
+  saveOrcamentoData,
+} from "./services/orcamentoStore";
 export default function App() {
   const [tab, setTab] = useState("projetos");
   const [cpus, setCpusState] = useState([]);
@@ -90,6 +100,13 @@ export default function App() {
     setStatus("Salvando backup local...");
     try {
       await saveLocalSnapshot({ cpus, projetos, precos, projetoAtivoId });
+
+      if (isCloudSyncBlocked()) {
+        const blockedUntil = new Date(getCloudSyncBlockedUntil()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        setStatus(`Salvo localmente. Firebase em pausa por cota ate ${blockedUntil}.`);
+        return;
+      }
+
       setStatus("Backup local salvo. Sincronizando nuvem...");
       const result = await saveOrcamentoData({
         cpus,
@@ -99,12 +116,18 @@ export default function App() {
         previousCpuHashes: cpuHashesRef.current,
         includeCpus: cpusDirty,
       });
+      clearCloudSyncBlock();
       cpuHashesRef.current = result.cpuHashes || {};
       setCpusDirty(false);
       setStatus(result.cpusSalvas ? `Salvo local e na nuvem. ${result.cpusSalvas} CPU(s) atualizada(s).` : "Salvo local e na nuvem.");
     } catch (e) {
       console.error("Erro real ao salvar no Firestore:", e);
-      setStatus("Salvo localmente. Falha ao sincronizar nuvem: " + (e?.message || e));
+      if (isQuotaError(e)) {
+        markCloudSyncBlocked();
+        setStatus("Salvo localmente. Cota do Firebase excedida; a nuvem fica em pausa por algumas horas.");
+      } else {
+        setStatus("Salvo localmente. Falha ao sincronizar nuvem: " + (e?.message || e));
+      }
     } finally {
       setBusy(false);
       setTimeout(() => setStatus(""), 12000);

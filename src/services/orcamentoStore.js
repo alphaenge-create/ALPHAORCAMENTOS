@@ -13,6 +13,8 @@ const CHUNK_ENCODING = "gzip-base64";
 const LOCAL_DB_NAME = "alphaorc-local";
 const LOCAL_STORE_NAME = "snapshots";
 const LOCAL_SNAPSHOT_KEY = "ultimo";
+const CLOUD_BLOCK_KEY = "alphaorc-cloud-blocked-until";
+const CLOUD_BLOCK_MS = 6 * 60 * 60 * 1000;
 
 const firestoreRestUrl = (path) => {
   const encodedPath = path.split("/").map(encodeURIComponent).join("/");
@@ -55,7 +57,10 @@ async function restSetDoc(path, data) {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Firestore REST ${response.status}: ${text}`);
+    const error = new Error(`Firestore REST ${response.status}: ${text}`);
+    error.status = response.status;
+    if (response.status === 429) error.code = "quota-exceeded";
+    throw error;
   }
 }
 
@@ -105,6 +110,29 @@ export async function saveLocalSnapshot(data) {
 export async function loadLocalSnapshot() {
   return await localDbOp("readonly", (store) => store.get(LOCAL_SNAPSHOT_KEY));
 }
+
+export const isQuotaError = (error) =>
+  error?.code === "quota-exceeded" ||
+  error?.status === 429 ||
+  String(error?.message || "").includes("429") ||
+  String(error?.message || "").toLowerCase().includes("quota exceeded");
+
+export const markCloudSyncBlocked = () => {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(CLOUD_BLOCK_KEY, String(Date.now() + CLOUD_BLOCK_MS));
+};
+
+export const clearCloudSyncBlock = () => {
+  if (typeof localStorage === "undefined") return;
+  localStorage.removeItem(CLOUD_BLOCK_KEY);
+};
+
+export const getCloudSyncBlockedUntil = () => {
+  if (typeof localStorage === "undefined") return 0;
+  return Number(localStorage.getItem(CLOUD_BLOCK_KEY) || 0);
+};
+
+export const isCloudSyncBlocked = () => getCloudSyncBlockedUntil() > Date.now();
 
 const withTimeout = (promise, label) =>
   Promise.race([
