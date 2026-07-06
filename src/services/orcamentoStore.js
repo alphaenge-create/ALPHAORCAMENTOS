@@ -8,6 +8,7 @@ const CHUNKS_COLLECTION = "orcacpu_chunks";
 const BATCH_SIZE = 400;
 const SAVE_TIMEOUT_MS = 90000;
 const CHUNK_SIZE = 250000;
+const CHUNK_ENCODING = "gzip-base64";
 
 const cpuHash = (cpu) => JSON.stringify(sanitize(cpu));
 const buildCpuHashes = (cpus = []) =>
@@ -29,12 +30,54 @@ const splitText = (text) => {
   return chunks;
 };
 
+const bytesToBase64 = (bytes) => {
+  let binary = "";
+  const blockSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += blockSize) {
+    binary += String.fromCharCode(...bytes.slice(i, i + blockSize));
+  }
+  return btoa(binary);
+};
+
+const base64ToBytes = (base64) => {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+};
+
+async function gzipText(text) {
+  if (typeof CompressionStream === "undefined") return { payload: text, encoding: "plain" };
+
+  const stream = new Blob([new TextEncoder().encode(text)])
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
+  const compressed = new Uint8Array(await new Response(stream).arrayBuffer());
+  return { payload: bytesToBase64(compressed), encoding: CHUNK_ENCODING };
+}
+
+async function gunzipText(payload, encoding) {
+  if (encoding !== CHUNK_ENCODING) return payload;
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("Este navegador nao suporta descompactar dados salvos.");
+  }
+
+  const bytes = base64ToBytes(payload);
+  const stream = new Blob([bytes])
+    .stream()
+    .pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(stream).text();
+}
+
 async function writeChunkedData(name, data) {
-  const payload = JSON.stringify(sanitize(data));
+  const { payload, encoding } = await gzipText(JSON.stringify(sanitize(data)));
   const chunks = splitText(payload);
 
   await setDoc(doc(db, ROOT_COLLECTION, `${name}_meta_v2`), {
     chunkCount: chunks.length,
+    encoding,
     updatedAt: new Date().toISOString(),
   });
 
@@ -51,14 +94,16 @@ async function readChunkedData(name) {
   const metaSnap = await getDoc(doc(db, ROOT_COLLECTION, `${name}_meta_v2`));
   if (!metaSnap.exists()) return null;
 
-  const chunkCount = metaSnap.data().chunkCount || 0;
+  const meta = metaSnap.data();
+  const chunkCount = meta.chunkCount || 0;
   if (!chunkCount) return null;
 
   const snaps = await Promise.all(
     Array.from({ length: chunkCount }, (_, index) => getDoc(doc(db, CHUNKS_COLLECTION, `${name}_${index}`)))
   );
   const payload = snaps.map((snap) => snap.data()?.chunk || "").join("");
-  return payload ? JSON.parse(payload) : null;
+  const json = payload ? await gunzipText(payload, meta.encoding) : "";
+  return json ? JSON.parse(json) : null;
 }
 
 export async function loadOrcamentoData() {
