@@ -122,23 +122,30 @@ async function loadProjetosV3() {
   const meta = metaSnap.data();
   const ids = meta.projetoIds || [];
   const projetos = await Promise.all(ids.map((id) => readChunkedData(projectChunkName(id))));
+  const resumosPorId = new Map((meta.resumos || []).map((resumo) => [resumo.id, resumo]));
   return {
-    projetos: projetos.filter(Boolean),
+    projetos: projetos
+      .filter(Boolean)
+      .map((projeto) => ({
+        ...projeto,
+        ...(resumosPorId.get(projeto.id) || {}),
+      })),
     projetoAtivoId: meta.projetoAtivoId || ids[0] || "",
   };
 }
 
 async function saveProjetosV3(projetos, projetoAtivoId) {
+  const projetoAtivo = (projetos || []).find((p) => p.id === projetoAtivoId) || (projetos || [])[0];
+
   await setDoc(doc(db, ROOT_COLLECTION, "projetos_index_v3"), {
-    projetoAtivoId,
+    projetoAtivoId: projetoAtivo?.id || projetoAtivoId || "",
     projetoIds: (projetos || []).map((p) => p.id),
     resumos: (projetos || []).map(projetoResumo),
     updatedAt: new Date().toISOString(),
   });
 
-  for (let i = 0; i < (projetos || []).length; i += 1) {
-    const projeto = projetos[i];
-    await writeChunkedData(projectChunkName(projeto.id), projeto);
+  if (projetoAtivo) {
+    await writeChunkedData(projectChunkName(projetoAtivo.id), projetoAtivo);
   }
 }
 
