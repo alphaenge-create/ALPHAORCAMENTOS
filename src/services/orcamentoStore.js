@@ -1,5 +1,5 @@
-import { doc, getDoc, setDoc, writeBatch } from "firebase/firestore";
-import { db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { db, firebaseConfig } from "../firebase";
 import { sanitize } from "../utils/format";
 
 const ROOT_COLLECTION = "orcacpu";
@@ -10,6 +10,42 @@ const BATCH_SIZE = 400;
 const SAVE_TIMEOUT_MS = 90000;
 const CHUNK_SIZE = 700000;
 const CHUNK_ENCODING = "gzip-base64";
+
+const firestoreRestUrl = (path) => {
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+  return `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/${encodedPath}?key=${firebaseConfig.apiKey}`;
+};
+
+const firestoreValue = (value) => {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  }
+  if (typeof value === "string") return { stringValue: value };
+  if (value instanceof Date) return { timestampValue: value.toISOString() };
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(firestoreValue) } };
+  if (typeof value === "object") return { mapValue: { fields: firestoreFields(value) } };
+  return { stringValue: String(value) };
+};
+
+const firestoreFields = (data) => {
+  const safe = sanitize(data) || {};
+  return Object.fromEntries(Object.entries(safe).map(([key, value]) => [key, firestoreValue(value)]));
+};
+
+async function restSetDoc(path, data) {
+  const response = await fetch(firestoreRestUrl(path), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: firestoreFields(data) }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Firestore REST ${response.status}: ${text}`);
+  }
+}
 
 const cpuHash = (cpu) => JSON.stringify(sanitize(cpu));
 const buildCpuHashes = (cpus = []) =>
@@ -76,18 +112,14 @@ async function writeChunkedData(name, data) {
   const { payload, encoding } = await gzipText(JSON.stringify(sanitize(data)));
   const chunks = splitText(payload);
 
-  await setDoc(doc(db, ROOT_COLLECTION, `${name}_meta_v2`), {
+  await restSetDoc(`${ROOT_COLLECTION}/${name}_meta_v2`, {
     chunkCount: chunks.length,
     encoding,
     updatedAt: new Date().toISOString(),
   });
 
-  for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-    const batch = writeBatch(db);
-    chunks.slice(i, i + BATCH_SIZE).forEach((chunk, offset) => {
-      batch.set(doc(db, CHUNKS_COLLECTION, `${name}_${i + offset}`), { chunk });
-    });
-    await batch.commit();
+  for (let i = 0; i < chunks.length; i += 1) {
+    await restSetDoc(`${CHUNKS_COLLECTION}/${name}_${i}`, { chunk: chunks[i] });
   }
 }
 
@@ -153,7 +185,7 @@ async function saveProjetosV3(projetos, projetoAtivoId) {
   const projetoAtivo = (projetos || []).find((p) => p.id === projetoAtivoId) || (projetos || [])[0];
 
   await withTimeout(
-    setDoc(doc(db, ROOT_COLLECTION, "projetos_index_v3"), {
+    restSetDoc(`${ROOT_COLLECTION}/projetos_index_v3`, {
       projetoAtivoId: projetoAtivo?.id || projetoAtivoId || "",
       projetoIds: (projetos || []).map((p) => p.id),
       resumos: (projetos || []).map(projetoResumo),
@@ -235,16 +267,12 @@ export async function saveOrcamentoData({
   const changedCpus = (cpus || []).filter((cpu) => previousCpuHashes[cpu.id] !== nextCpuHashes[cpu.id]);
 
   await withTimeout(
-    setDoc(doc(db, ROOT_COLLECTION, "cpus_meta"), sanitize({ cpuIds: cpus.map((c) => c.id) })),
+    restSetDoc(`${ROOT_COLLECTION}/cpus_meta`, { cpuIds: cpus.map((c) => c.id) }),
     "Salvamento do indice da base de CPUs"
   );
 
-  for (let i = 0; i < changedCpus.length; i += BATCH_SIZE) {
-    const batch = writeBatch(db);
-    changedCpus.slice(i, i + BATCH_SIZE).forEach((cpu) => {
-      batch.set(doc(db, CPUS_COLLECTION, cpu.id), sanitize(cpu));
-    });
-    await withTimeout(batch.commit(), "Salvamento da base de CPUs");
+  for (let i = 0; i < changedCpus.length; i += 1) {
+    await withTimeout(restSetDoc(`${CPUS_COLLECTION}/${changedCpus[i].id}`, changedCpus[i]), "Salvamento da base de CPUs");
   }
 
   return {
