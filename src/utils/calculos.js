@@ -9,18 +9,34 @@ const subCpuMatchText = (value) =>
     .replace(/\s+/g, " ")
     .trim();
 
-export const findSubCpu = (insumo, cpusArray = []) =>
-  (cpusArray || []).find(
-    (c) => {
-      const cpuDesc = subCpuMatchText(c.descricao);
-      const insumoDesc = subCpuMatchText(insumo.descricao);
-      return (
-        cpuDesc === insumoDesc ||
-        (c.codigo && norm(c.codigo) === norm(insumo.descricao)) ||
-        (c.codigo && insumo.codigo && norm(c.codigo) === norm(insumo.codigo))
-      );
-    }
+const subCpuLookupCache = new WeakMap();
+
+const addLookupEntry = (map, key, cpu) => {
+  if (key && !map.has(key)) map.set(key, cpu);
+};
+
+const getSubCpuLookup = (cpusArray = []) => {
+  if (!Array.isArray(cpusArray)) return new Map();
+  const cached = subCpuLookupCache.get(cpusArray);
+  if (cached) return cached;
+
+  const map = new Map();
+  cpusArray.forEach((cpu) => {
+    addLookupEntry(map, `desc:${subCpuMatchText(cpu.descricao)}`, cpu);
+    addLookupEntry(map, `codigo:${norm(cpu.codigo || "")}`, cpu);
+  });
+  subCpuLookupCache.set(cpusArray, map);
+  return map;
+};
+
+export const findSubCpu = (insumo, cpusArray = []) => {
+  const lookup = getSubCpuLookup(cpusArray);
+  return (
+    lookup.get(`desc:${subCpuMatchText(insumo.descricao)}`) ||
+    lookup.get(`codigo:${norm(insumo.descricao || "")}`) ||
+    lookup.get(`codigo:${norm(insumo.codigo || "")}`)
   );
+};
 
 export const insumoValorUnitario = (insumo, cpusArray = [], catMap = null, visited = new Set()) => {
   const subCpu = findSubCpu(insumo, cpusArray);

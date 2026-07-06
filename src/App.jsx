@@ -26,6 +26,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const fileInputRef = useRef(null);
+  const cpuHashesRef = useRef({});
   // Novos estados para controle de recolhimento/expansão das camadas
   const [etapasExpandidas, setEtapasExpandidas] = useState({});
   const [cpusExpandidas, setCpusExpandidas] = useState({});
@@ -42,6 +43,7 @@ export default function App() {
     }
 
     setCpus(data.cpus || []);
+    cpuHashesRef.current = data.cpuHashes || {};
     setProjetos(data.projetos || []);
     setPrecos(data.precos || []);
     setProjetoAtivoId(data.projetoAtivoId || "");
@@ -68,8 +70,9 @@ export default function App() {
     setBusy(true);
     setStatus("Salvando...");
     try {
-      await saveOrcamentoData({ cpus, projetos, precos, projetoAtivoId });
-      setStatus("Salvo no Firebase.");
+      const result = await saveOrcamentoData({ cpus, projetos, precos, projetoAtivoId, previousCpuHashes: cpuHashesRef.current });
+      cpuHashesRef.current = result.cpuHashes || {};
+      setStatus(result.cpusSalvas ? `Salvo no Firebase. ${result.cpusSalvas} CPU(s) atualizada(s).` : "Salvo no Firebase.");
     } catch (e) {
       console.error("Erro real ao salvar no Firestore:", e);
       setStatus("Falha ao salvar: " + (e?.message || e));
@@ -1203,6 +1206,17 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap }) {
     [cpus]
   );
 
+  const cpuSearchIndex = useMemo(
+    () =>
+      cpus.map((c) => ({
+        cpu: c,
+        haystack: norm(
+          `${c.codigo || ""} ${c.descricao || ""} ${c.fonte || ""} ${(c.insumos || []).map((i) => i.descricao).join(" ")}`
+        ),
+      })),
+    [cpus]
+  );
+
   const queryTokens = useMemo(() => {
     const tokens = [];
     const re = /"([^"]+)"|(\S+)/g;
@@ -1214,15 +1228,18 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap }) {
     return tokens;
   }, [query]);
 
-  const filtered = cpus.filter((c) => {
-    const matchesFonte = fonteFiltro === "Todas" || c.fonte === fonteFiltro;
-    if (!matchesFonte) return false;
-    if (queryTokens.length === 0) return true;
-    const haystack = norm(
-      c.codigo + " " + c.descricao + " " + c.fonte + " " + c.insumos.map((i) => i.descricao).join(" ")
-    );
-    return queryTokens.every((t) => haystack.includes(t));
-  });
+  const filtered = useMemo(
+    () =>
+      cpuSearchIndex
+        .filter(({ cpu, haystack }) => {
+          const matchesFonte = fonteFiltro === "Todas" || cpu.fonte === fonteFiltro;
+          if (!matchesFonte) return false;
+          if (queryTokens.length === 0) return true;
+          return queryTokens.every((t) => haystack.includes(t));
+        })
+        .map(({ cpu }) => cpu),
+    [cpuSearchIndex, fonteFiltro, queryTokens]
+  );
 
   const [confirmingDelete, setConfirmingDelete] = useState(null);
 
@@ -2056,6 +2073,15 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
   // NOVO: Controla quais itens da etapa estão expandidos (mostrando insumos)
   const [itensExpandidos, setItensExpandidos] = useState({});
 
+  const cpuSearchIndex = useMemo(
+    () =>
+      cpus.map((c) => ({
+        cpu: c,
+        haystack: norm(`${c.codigo || ""} ${c.descricao || ""}`),
+      })),
+    [cpus]
+  );
+
   const adicionarEtapa = () => {
     setEtapas([...etapas, { id: uid(), nome: `Nova Etapa ${etapas.length + 1}`, itens: [] }]);
   };
@@ -2134,12 +2160,14 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
   const obterCpusFiltradas = (textoBusca) => {
     if (!textoBusca || !textoBusca.trim()) return [];
     const searchTerms = norm(textoBusca).split(/\s+/).filter(Boolean);
-    return cpus
-      .filter((c) => {
-        const targetText = norm(c.codigo + " " + c.descricao);
-        return searchTerms.every((term) => targetText.includes(term));
-      })
-      .slice(0, 10);
+    const result = [];
+    for (const item of cpuSearchIndex) {
+      if (searchTerms.every((term) => item.haystack.includes(term))) {
+        result.push(item.cpu);
+        if (result.length >= 10) break;
+      }
+    }
+    return result;
   };
 
   const handleKeyDown = (evt, etapaId, listaCpus) => {
