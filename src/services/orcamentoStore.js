@@ -7,7 +7,7 @@ const CPUS_COLLECTION = "orcacpu_cpus";
 const CHUNKS_COLLECTION = "orcacpu_chunks";
 const PROJECT_CHUNKS_PREFIX = "projeto";
 const BATCH_SIZE = 400;
-const SAVE_TIMEOUT_MS = 90000;
+const SAVE_TIMEOUT_MS = 30000;
 const CHUNK_SIZE = 700000;
 const CHUNK_ENCODING = "gzip-base64";
 
@@ -17,7 +17,7 @@ const firestoreRestUrl = (path) => {
 };
 
 const firestoreValue = (value) => {
-  if (value === null || value === undefined) return { nullValue: null };
+  if (value === null || value === undefined) return { nullValue: "NULL_VALUE" };
   if (typeof value === "boolean") return { booleanValue: value };
   if (typeof value === "number") {
     return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
@@ -35,11 +35,20 @@ const firestoreFields = (data) => {
 };
 
 async function restSetDoc(path, data) {
-  const response = await fetch(firestoreRestUrl(path), {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: firestoreFields(data) }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SAVE_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(firestoreRestUrl(path), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: firestoreFields(data) }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const text = await response.text();
@@ -145,7 +154,7 @@ const projectEtapaChunkName = (projectId, etapaId) => `${PROJECT_CHUNKS_PREFIX}_
 const projetoResumo = (p) => ({
   id: p.id,
   nome: p.nome,
-  cliente: p.cliente,
+  cliente: p.cliente || "",
 });
 
 async function loadProjetosV3() {
@@ -186,12 +195,12 @@ async function saveProjetosV3(projetos, projetoAtivoId) {
 
   await withTimeout(
     restSetDoc(`${ROOT_COLLECTION}/projetos_index_v3`, {
+      storageVersion: 4,
       projetoAtivoId: projetoAtivo?.id || projetoAtivoId || "",
       projetoIds: (projetos || []).map((p) => p.id),
-      resumos: (projetos || []).map(projetoResumo),
       updatedAt: new Date().toISOString(),
     }),
-    "Salvamento do indice dos orcamentos"
+    "Salvamento REST do indice dos orcamentos"
   );
 
   if (projetoAtivo) {
