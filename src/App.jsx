@@ -513,7 +513,7 @@ export default function App() {
                       const qCpu = num(it.quantidade);
                       (it.insumos || []).forEach(ins => {
                         const tIn = String(ins.tipo || "").toUpperCase().trim();
-                        const cIn = num(ins.coeficiente) * qCpu * num(ins.valorUnitario);
+                        const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
                         if (fatDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")))) {
                           totalVenda += cIn * fMats;
                         } else {
@@ -861,7 +861,7 @@ export default function App() {
                         const qCpu = num(it.quantidade);
                         (it.insumos || []).forEach(ins => {
                           const tIn = String(ins.tipo || "").toUpperCase().trim();
-                          const cIn = num(ins.coeficiente) * qCpu * num(ins.valorUnitario);
+                          const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
                           const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
                           totalEtapaVenda += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
                         });
@@ -952,7 +952,7 @@ export default function App() {
                       const qCpu = num(it.quantidade);
                       (it.insumos || []).forEach(ins => {
                         const tIn = String(ins.tipo || "").toUpperCase().trim();
-                        const cIn = num(ins.coeficiente) * qCpu * num(ins.valorUnitario);
+                        const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
                         const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
                         totalEtapaComBdi += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
                       });
