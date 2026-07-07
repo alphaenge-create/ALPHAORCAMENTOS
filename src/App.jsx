@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   Plus, Trash2, Pencil, X, Search, Upload, Download,
   ChevronDown, ChevronRight, Database, Calculator, Copy, Save, Percent, TrendingUp, RefreshCw,
-  Tags, AlertTriangle, Check, FolderKanban, HardHat, User, LogIn
+  Tags, AlertTriangle, Check, FolderKanban, HardHat, User, LogIn, MapPin, Phone, Mail, Building2, FileText
 } from "lucide-react";
 import { FONTES_PADRAO, TIPOS, createDefaultProject, seedCpus } from "./data/defaultData";
 import {
@@ -32,6 +32,26 @@ const BDI_PADRAO = {
   art: 0,
   lucro: 0.42,
 };
+
+const CLIENTE_PADRAO = {
+  nome: "",
+  local: "",
+  contato: "",
+  telefone: "",
+  email: "",
+  documento: "",
+  endereco: "",
+  observacoes: "",
+};
+
+const clienteDoProjeto = (projeto) => ({
+  ...CLIENTE_PADRAO,
+  ...(projeto?.clienteCadastro || {}),
+  nome: projeto?.clienteCadastro?.nome || projeto?.cliente || "",
+});
+
+const clienteEstaCompleto = (cliente) =>
+  Boolean(String(cliente?.nome || "").trim() && String(cliente?.local || "").trim());
 
 const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
   const calcularFatorBdiQualquer = (t = {}) => {
@@ -217,6 +237,8 @@ export default function App() {
     return projetos.find((p) => p.id === projetoAtivoId) || projetos[0] || null;
   }, [projetos, projetoAtivoId]);
 
+  const clienteAtivo = useMemo(() => clienteDoProjeto(projetoAtivo), [projetoAtivo]);
+  const cadastroClienteOk = useMemo(() => clienteEstaCompleto(clienteAtivo), [clienteAtivo]);
   const etapas = useMemo(() => projetoAtivo?.etapas || [], [projetoAtivo]);
   const bdi = useMemo(() => projetoAtivo?.bdi || BDI_PADRAO, [projetoAtivo]);
 
@@ -232,6 +254,32 @@ export default function App() {
     setProjetos((prev) =>
       prev.map((p) => (p.id === projetoAtivoId ? { ...p, bdi: typeof novoBdi === "function" ? novoBdi(p.bdi) : novoBdi } : p))
     );
+  };
+
+  const setClienteAtivo = (novoCliente) => {
+    if (!projetoAtivoId) return;
+    setProjetos((prev) =>
+      prev.map((p) => {
+        if (p.id !== projetoAtivoId) return p;
+        const clienteAtual = clienteDoProjeto(p);
+        const clienteCadastro = typeof novoCliente === "function" ? novoCliente(clienteAtual) : novoCliente;
+        return {
+          ...p,
+          cliente: clienteCadastro.nome || "",
+          clienteCadastro,
+        };
+      })
+    );
+  };
+
+  const abrirAbaProjeto = (proximaTab) => {
+    if (proximaTab !== "cliente" && !cadastroClienteOk) {
+      setTab("cliente");
+      setStatus("Preencha Nome do cliente e Local da obra para continuar.");
+      setTimeout(() => setStatus(""), 5000);
+      return;
+    }
+    setTab(proximaTab);
   };
 
   const catalog = useMemo(() => buildCatalog(cpus, projetos, projetoAtivoId, precos), [cpus, projetos, projetoAtivoId, precos]);
@@ -345,7 +393,7 @@ export default function App() {
   }, [bdi, etapas, cpus, catalogMap]);
 
   // Abas disponíveis apenas dentro de um projeto ativo
-  const abasProjeto = ["custo", "planilha", "bdi", "precovenda", "maoobra", "materiais", "precos"];
+  const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "maoobra", "materiais", "precos"];
   const tabEhDeProjeto = abasProjeto.includes(tab);
 
   return (
@@ -358,7 +406,7 @@ export default function App() {
             <h1 className="text-2xl font-semibold tracking-tight">Orçamentador por CPU</h1>
             <p className="text-sm text-stone-500">
               {projetoAtivo
-                ? `Orçamento: ${projetoAtivo.nome}  -  ${projetoAtivo.cliente || "Geral"}`
+                ? `Orçamento: ${projetoAtivo.nome}  -  ${clienteAtivo.nome || "Cliente não cadastrado"}`
                 : "Crie ou selecione um orçamento para começar"}
             </p>
           </div>
@@ -414,25 +462,31 @@ export default function App() {
             <span className="self-center text-[10px] font-semibold text-stone-400 uppercase pr-2 pl-1">
               {projetoAtivo.nome}:
             </span>
-            <TabBtn active={tab === "custo"} onClick={() => setTab("custo")} icon={<Calculator size={15} />}>
+            <TabBtn active={tab === "cliente"} onClick={() => setTab("cliente")} icon={<User size={15} />}>
+              Cadastro Cliente
+              {!cadastroClienteOk && (
+                <span className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+              )}
+            </TabBtn>
+            <TabBtn active={tab === "custo"} onClick={() => abrirAbaProjeto("custo")} icon={<Calculator size={15} />}>
   Lançamento CPU
 </TabBtn>
-<TabBtn active={tab === "planilha"} onClick={() => setTab("planilha")} icon={<FolderKanban size={15} />}>
+<TabBtn active={tab === "planilha"} onClick={() => abrirAbaProjeto("planilha")} icon={<FolderKanban size={15} />}>
   Planilha de custo
 </TabBtn>
-            <TabBtn active={tab === "bdi"} onClick={() => setTab("bdi")} icon={<Percent size={15} />}>
+            <TabBtn active={tab === "bdi"} onClick={() => abrirAbaProjeto("bdi")} icon={<Percent size={15} />}>
               BDI - {fmt(bdiCalc.bdiRate * 100)}%
             </TabBtn>
-            <TabBtn active={tab === "precovenda"} onClick={() => setTab("precovenda")} icon={<TrendingUp size={15} />}>
+            <TabBtn active={tab === "precovenda"} onClick={() => abrirAbaProjeto("precovenda")} icon={<TrendingUp size={15} />}>
               Venda - R$ {fmt(bdiCalc.valorVenda)}
             </TabBtn>
-            <TabBtn active={tab === "maoobra"} onClick={() => setTab("maoobra")} icon={<HardHat size={15} />}>
+            <TabBtn active={tab === "maoobra"} onClick={() => abrirAbaProjeto("maoobra")} icon={<HardHat size={15} />}>
               Mão de Obra
             </TabBtn>
-            <TabBtn active={tab === "materiais"} onClick={() => setTab("materiais")} icon={<Database size={15} />}>
+            <TabBtn active={tab === "materiais"} onClick={() => abrirAbaProjeto("materiais")} icon={<Database size={15} />}>
               Materiais
             </TabBtn>
-            <TabBtn active={tab === "precos"} onClick={() => setTab("precos")} icon={<Tags size={15} />}>
+            <TabBtn active={tab === "precos"} onClick={() => abrirAbaProjeto("precos")} icon={<Tags size={15} />}>
               Banco de Preços ({catalog.length})
               {catalog.some((c) => c.divergente) && (
                 <span className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
@@ -464,7 +518,8 @@ export default function App() {
                     {
                       id: pId,
                       nome: `Novo Orçamento - ${prev.length + 1}`,
-                      cliente: "Cliente Geral",
+                      cliente: "",
+                      clienteCadastro: { ...CLIENTE_PADRAO },
                       etapas: [{ id: uid(), nome: "Etapa Inicial", itens: [] }],
                       bdi: {
                         custoInicial: 0,
@@ -481,6 +536,7 @@ export default function App() {
                     }
                   ]);
                   setProjetoAtivoId(pId);
+                  setTab("cliente");
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 text-white rounded-lg text-xs font-medium hover:bg-stone-800"
               >
@@ -501,12 +557,16 @@ export default function App() {
                 const valorVendaCalculado = calcularPrecoVendaProjeto(p.etapas || [], p.bdi || BDI_PADRAO, cpus, catalogMap).valorVenda;
 
                 return (
+                  (() => {
+                    const clienteCard = clienteDoProjeto(p);
+                    const clienteOk = clienteEstaCompleto(clienteCard);
+                    return (
                   <div
                     key={p.id}
                     className={`bg-white border rounded-xl p-4 shadow-xs space-y-3 cursor-pointer transition-all ${
                       isActive ? "border-stone-900 ring-1 ring-stone-900 bg-stone-50/20" : "border-stone-200 hover:border-stone-400"
                     }`}
-                    onClick={() => { setProjetoAtivoId(p.id); setTab("custo"); }}
+                    onClick={() => { setProjetoAtivoId(p.id); setTab(clienteOk ? "custo" : "cliente"); }}
                   >
                     <div className="flex justify-between items-start">
                       <div>
@@ -519,12 +579,20 @@ export default function App() {
                           />
                         </h3>
                         <input
-                          value={p.cliente || ""}
+                          value={clienteCard.nome || ""}
                           onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => setProjetos(prev => prev.map(x => x.id === p.id ? { ...x, cliente: e.target.value } : x))}
-                          placeholder="Cliente"
+                          onChange={(e) => setProjetos(prev => prev.map(x => {
+                            if (x.id !== p.id) return x;
+                            const cadastro = { ...clienteDoProjeto(x), nome: e.target.value };
+                            return { ...x, cliente: cadastro.nome, clienteCadastro: cadastro };
+                          }))}
+                          placeholder="Nome do cliente"
                           className="text-xs text-stone-400 bg-transparent border-b border-transparent hover:border-stone-300 focus:border-stone-500 outline-none w-full mt-0.5"
                         />
+                        <div className="text-[11px] text-stone-400 mt-1 flex items-center gap-1">
+                          <MapPin size={11} />
+                          <span>{clienteCard.local || "Local da obra pendente"}</span>
+                        </div>
                       </div>
                       <button
                         onClick={(e) => {
@@ -555,6 +623,11 @@ export default function App() {
 
                     <div className="flex justify-between items-center pt-1 text-[11px]">
                       <span className="text-stone-400">{(p.etapas || []).length} etapa(s) cadastrada(s)</span>
+                      {!clienteOk && (
+                        <span className="text-amber-700 font-semibold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">
+                          Cadastro pendente
+                        </span>
+                      )}
                       {isActive && (
                         <span className="text-stone-800 font-semibold bg-stone-200 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">
                           Selecionado ativo
@@ -562,6 +635,8 @@ export default function App() {
                       )}
                     </div>
                   </div>
+                    );
+                  })()
                 );
               })}
             </div>
@@ -580,6 +655,16 @@ export default function App() {
               Criar ou selecionar um orçamento
             </button>
           </div>
+        )}
+        {tab === "cliente" && projetoAtivo && (
+          <CadastroCliente
+            projeto={projetoAtivo}
+            cliente={clienteAtivo}
+            setProjetos={setProjetos}
+            setCliente={setClienteAtivo}
+            completo={cadastroClienteOk}
+            onContinuar={() => abrirAbaProjeto("custo")}
+          />
         )}
         {tab === "custo" && projetoAtivo && (
           <Orcamento 
@@ -1216,6 +1301,155 @@ export default function App() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, onContinuar }) {
+  const atualizarCampo = (campo, valor) => {
+    setCliente((prev) => ({ ...prev, [campo]: valor }));
+  };
+
+  const atualizarNomeProjeto = (valor) => {
+    setProjetos((prev) => prev.map((p) => (p.id === projeto.id ? { ...p, nome: valor } : p)));
+  };
+
+  const campoBase =
+    "w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white focus:ring-1";
+  const campoObrigatorio = (valor) =>
+    `${campoBase} ${
+      String(valor || "").trim()
+        ? "border-stone-300 focus:border-stone-700 focus:ring-stone-700"
+        : "border-amber-300 bg-amber-50/40 focus:border-amber-500 focus:ring-amber-500"
+    }`;
+
+  return (
+    <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden">
+      <div className="px-5 py-4 border-b border-stone-200 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-stone-800 flex items-center gap-2">
+            <User size={17} /> Cadastro do Cliente
+          </h2>
+          <p className="text-xs text-stone-500 mt-1">
+            Dados vinculados a este orçamento para uso em planilhas, propostas e documentos comerciais.
+          </p>
+        </div>
+        <span
+          className={`text-[11px] font-semibold px-2 py-1 rounded border ${
+            completo
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+              : "bg-amber-50 border-amber-200 text-amber-700"
+          }`}
+        >
+          {completo ? "Cadastro completo" : "Nome e local obrigatórios"}
+        </span>
+      </div>
+
+      <div className="p-5 space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <CampoCliente
+            label="Nome do orçamento"
+            value={projeto.nome || ""}
+            onChange={atualizarNomeProjeto}
+            icon={<FileText size={14} />}
+          />
+          <CampoCliente
+            label="Nome do cliente"
+            value={cliente.nome || ""}
+            onChange={(valor) => atualizarCampo("nome", valor)}
+            icon={<User size={14} />}
+            inputClassName={campoObrigatorio(cliente.nome)}
+            required
+          />
+          <CampoCliente
+            label="Local da obra"
+            value={cliente.local || ""}
+            onChange={(valor) => atualizarCampo("local", valor)}
+            icon={<MapPin size={14} />}
+            inputClassName={campoObrigatorio(cliente.local)}
+            required
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <CampoCliente
+            label="Contato"
+            value={cliente.contato || ""}
+            onChange={(valor) => atualizarCampo("contato", valor)}
+            icon={<Building2 size={14} />}
+          />
+          <CampoCliente
+            label="Telefone"
+            value={cliente.telefone || ""}
+            onChange={(valor) => atualizarCampo("telefone", valor)}
+            icon={<Phone size={14} />}
+          />
+          <CampoCliente
+            label="E-mail"
+            value={cliente.email || ""}
+            onChange={(valor) => atualizarCampo("email", valor)}
+            icon={<Mail size={14} />}
+            type="email"
+          />
+          <CampoCliente
+            label="CPF/CNPJ"
+            value={cliente.documento || ""}
+            onChange={(valor) => atualizarCampo("documento", valor)}
+            icon={<FileText size={14} />}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <CampoCliente
+            label="Endereço"
+            value={cliente.endereco || ""}
+            onChange={(valor) => atualizarCampo("endereco", valor)}
+            icon={<MapPin size={14} />}
+          />
+          <div>
+            <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
+              <FileText size={14} /> Observações
+            </label>
+            <textarea
+              value={cliente.observacoes || ""}
+              onChange={(e) => atualizarCampo("observacoes", e.target.value)}
+              rows={3}
+              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700 resize-none"
+              placeholder="Informações adicionais para proposta ou visita técnica"
+            />
+          </div>
+        </div>
+
+        <div className="pt-3 border-t border-stone-200 flex justify-end">
+          <button
+            type="button"
+            onClick={onContinuar}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+              completo
+                ? "bg-stone-900 text-white hover:bg-stone-800"
+                : "bg-stone-200 text-stone-500 cursor-not-allowed"
+            }`}
+          >
+            Continuar para Lançamento CPU
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CampoCliente({ label, value, onChange, icon, required, type = "text", inputClassName }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
+        {icon} {label} {required && <span className="text-amber-600">*</span>}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputClassName || "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700"}
+      />
     </div>
   );
 }

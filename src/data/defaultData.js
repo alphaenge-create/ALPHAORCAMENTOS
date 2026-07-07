@@ -30,7 +30,17 @@ export const createDefaultProject = () => {
   return {
     id: pId,
     nome: "Orcamento Padrao Inicial",
-    cliente: "Cliente Geral",
+    cliente: "",
+    clienteCadastro: {
+      nome: "",
+      local: "",
+      contato: "",
+      telefone: "",
+      email: "",
+      documento: "",
+      endereco: "",
+      observacoes: "",
+    },
     etapas: [{ id: uid(), nome: "Etapa Inicial", itens: [] }],
     bdi: {
       custoInicial: 0,
