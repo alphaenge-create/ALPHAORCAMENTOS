@@ -399,12 +399,73 @@ export default function App() {
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        {/* â”€â”€ HEADER â”€â”€ */}
-        <header className="flex items-center justify-between mb-6">
-          <div>
+      <div className="max-w-[1500px] mx-auto px-4 py-6 lg:flex lg:items-start lg:gap-5">
+        <aside className="lg:sticky lg:top-4 lg:w-64 lg:shrink-0 mb-5 lg:mb-0">
+          <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-stone-200">
+              <p className="text-[10px] font-semibold text-stone-400 uppercase">Navegação</p>
+              <p className="text-xs font-medium text-stone-700 truncate mt-0.5">
+                {projetoAtivo?.nome || "Sem orçamento ativo"}
+              </p>
+            </div>
+
+            <nav className="p-2 space-y-1 max-lg:flex max-lg:overflow-x-auto max-lg:space-y-0 max-lg:gap-1">
+              <SideTabBtn active={tab === "projetos"} onClick={() => setTab("projetos")} icon={<FolderKanban size={15} />}>
+                Orçamentos ({projetos.length})
+              </SideTabBtn>
+              <SideTabBtn active={tab === "cpus"} onClick={() => setTab("cpus")} icon={<Database size={15} />}>
+                Base de CPUs ({cpus.length})
+              </SideTabBtn>
+
+              {projetoAtivo && (
+                <>
+                  <div className="max-lg:hidden border-t border-stone-200 my-2 pt-2">
+                    <p className="px-2 text-[10px] font-semibold text-stone-400 uppercase truncate">
+                      {projetoAtivo.nome}
+                    </p>
+                  </div>
+                  <SideTabBtn active={tab === "cliente"} onClick={() => setTab("cliente")} icon={<User size={15} />}>
+                    Cadastro Cliente
+                    {!cadastroClienteOk && (
+                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                    )}
+                  </SideTabBtn>
+                  <SideTabBtn active={tab === "custo"} onClick={() => abrirAbaProjeto("custo")} icon={<Calculator size={15} />}>
+                    Lançamento CPU
+                  </SideTabBtn>
+                  <SideTabBtn active={tab === "planilha"} onClick={() => abrirAbaProjeto("planilha")} icon={<FolderKanban size={15} />}>
+                    Planilha de custo
+                  </SideTabBtn>
+                  <SideTabBtn active={tab === "bdi"} onClick={() => abrirAbaProjeto("bdi")} icon={<Percent size={15} />}>
+                    BDI - {fmt(bdiCalc.bdiRate * 100)}%
+                  </SideTabBtn>
+                  <SideTabBtn active={tab === "precovenda"} onClick={() => abrirAbaProjeto("precovenda")} icon={<TrendingUp size={15} />}>
+                    Venda - R$ {fmt(bdiCalc.valorVenda)}
+                  </SideTabBtn>
+                  <SideTabBtn active={tab === "maoobra"} onClick={() => abrirAbaProjeto("maoobra")} icon={<HardHat size={15} />}>
+                    Mão de Obra
+                  </SideTabBtn>
+                  <SideTabBtn active={tab === "materiais"} onClick={() => abrirAbaProjeto("materiais")} icon={<Database size={15} />}>
+                    Materiais
+                  </SideTabBtn>
+                  <SideTabBtn active={tab === "precos"} onClick={() => abrirAbaProjeto("precos")} icon={<Tags size={15} />}>
+                    Banco de Preços ({catalog.length})
+                    {catalog.some((c) => c.divergente) && (
+                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                    )}
+                  </SideTabBtn>
+                </>
+              )}
+            </nav>
+          </div>
+        </aside>
+
+        <main className="min-w-0 flex-1">
+        {/* HEADER */}
+        <header className="flex items-center justify-between mb-6 gap-4">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight">Orçamentador por CPU</h1>
-            <p className="text-sm text-stone-500">
+            <p className="text-sm text-stone-500 truncate">
               {projetoAtivo
                 ? `Orçamento: ${projetoAtivo.nome}  -  ${clienteAtivo.nome || "Cliente não cadastrado"}`
                 : "Crie ou selecione um orçamento para começar"}
@@ -445,58 +506,6 @@ export default function App() {
             </button>
           </div>
         </header>
-
-        {/* â”€â”€ NAV GLOBAL â”€â”€ */}
-        <nav className="flex gap-1 mb-1 flex-wrap">
-          <TabBtn active={tab === "projetos"} onClick={() => setTab("projetos")} icon={<FolderKanban size={15} />}>
-            Orçamentos ({projetos.length})
-          </TabBtn>
-          <TabBtn active={tab === "cpus"} onClick={() => setTab("cpus")} icon={<Database size={15} />}>
-            Base de CPUs ({cpus.length})
-          </TabBtn>
-        </nav>
-
-        {/* â”€â”€ NAV DO PROJETO ATIVO (só aparece quando há projeto) â”€â”€ */}
-        {projetoAtivo && (
-          <nav className="flex gap-1 mb-6 border-b border-stone-200 flex-wrap pt-1">
-            <span className="self-center text-[10px] font-semibold text-stone-400 uppercase pr-2 pl-1">
-              {projetoAtivo.nome}:
-            </span>
-            <TabBtn active={tab === "cliente"} onClick={() => setTab("cliente")} icon={<User size={15} />}>
-              Cadastro Cliente
-              {!cadastroClienteOk && (
-                <span className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
-              )}
-            </TabBtn>
-            <TabBtn active={tab === "custo"} onClick={() => abrirAbaProjeto("custo")} icon={<Calculator size={15} />}>
-  Lançamento CPU
-</TabBtn>
-<TabBtn active={tab === "planilha"} onClick={() => abrirAbaProjeto("planilha")} icon={<FolderKanban size={15} />}>
-  Planilha de custo
-</TabBtn>
-            <TabBtn active={tab === "bdi"} onClick={() => abrirAbaProjeto("bdi")} icon={<Percent size={15} />}>
-              BDI - {fmt(bdiCalc.bdiRate * 100)}%
-            </TabBtn>
-            <TabBtn active={tab === "precovenda"} onClick={() => abrirAbaProjeto("precovenda")} icon={<TrendingUp size={15} />}>
-              Venda - R$ {fmt(bdiCalc.valorVenda)}
-            </TabBtn>
-            <TabBtn active={tab === "maoobra"} onClick={() => abrirAbaProjeto("maoobra")} icon={<HardHat size={15} />}>
-              Mão de Obra
-            </TabBtn>
-            <TabBtn active={tab === "materiais"} onClick={() => abrirAbaProjeto("materiais")} icon={<Database size={15} />}>
-              Materiais
-            </TabBtn>
-            <TabBtn active={tab === "precos"} onClick={() => abrirAbaProjeto("precos")} icon={<Tags size={15} />}>
-              Banco de Preços ({catalog.length})
-              {catalog.some((c) => c.divergente) && (
-                <span className="ml-1 w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
-              )}
-            </TabBtn>
-          </nav>
-        )}
-
-        {/* divisor para abas globais (sem projeto ativo) */}
-        {!projetoAtivo && <div className="border-b border-stone-200 mb-6" />}
 
         <datalist id="insumos-catalogo">
           {catalog.map((c) => <option key={c.key} value={c.descricao} />)}
@@ -1300,6 +1309,7 @@ export default function App() {
             onApplyAllToCpus={aplicarTodosPrecosNoOrcamentoAtivo}
           />
         )}
+        </main>
       </div>
     </div>
   );
@@ -1465,6 +1475,26 @@ function TabBtn({ active, onClick, icon, children, disabled }) {
     >
       {icon}
       {children}
+    </button>
+  );
+}
+
+function SideTabBtn({ active, onClick, icon, children, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center gap-2 w-full px-3 py-2 text-sm font-medium rounded-md transition-colors text-left whitespace-nowrap ${
+        disabled ? "opacity-40 cursor-not-allowed" : ""
+      } ${
+        active
+          ? "bg-stone-900 text-white"
+          : "text-stone-500 hover:text-stone-900 hover:bg-stone-100"
+      }`}
+    >
+      <span className={active ? "text-white" : "text-stone-400"}>{icon}</span>
+      <span className="truncate">{children}</span>
     </button>
   );
 }
