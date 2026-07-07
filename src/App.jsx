@@ -61,6 +61,14 @@ const nomeArquivoSeguro = (valor) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const escapeHtml = (valor) =>
+  String(valor ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
 const itemVendaResumo = (item, bdiCalc, cpus, catalogMap) => {
   const quantidade = num(item.quantidade);
   let total = 0;
@@ -220,6 +228,204 @@ const exportarPropostaXlsx = ({ projeto, etapas, bdiCalc, cpus, catalogMap }) =>
   const wsValores = criarAbaVendaModelo(grupos, bdiCalc?.FatorBdi || 1);
   XLSX.utils.book_append_sheet(wb, wsValores, "VENDA");
   XLSX.writeFile(wb, `${nomeArquivoSeguro(projeto.nome)}_Proposta.xlsx`);
+};
+
+const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
+  const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap);
+  const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
+  const hoje = new Date();
+  const dataHoje = hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const numeroProposta = `PROP - ${String(hoje.getMonth() + 1).padStart(2, "0")}/${String(hoje.getFullYear()).slice(-2)}`;
+  const nomeProjeto = projeto?.nome || "Orçamento";
+  const nomeCliente = cliente?.nome || "Cliente";
+  const localObra = cliente?.local || cliente?.endereco || "";
+  const contato = cliente?.contato || "";
+  const observacoes = cliente?.observacoes || "";
+
+  const linhasEscopo = grupos
+    .map((grupo) => `
+      <tr class="grupo">
+        <td>${escapeHtml(grupo.numero)}.</td>
+        <td>${escapeHtml(grupo.nome)}</td>
+        <td></td>
+        <td></td>
+      </tr>
+      ${grupo.itens.map((item) => `
+        <tr>
+          <td>${escapeHtml(item.numero)}</td>
+          <td>${escapeHtml(item.descricao)}</td>
+          <td>${escapeHtml(item.unidade)}</td>
+          <td>${fmt(item.quantidade)}</td>
+        </tr>
+      `).join("")}
+    `)
+    .join("");
+
+  const linhasValores = grupos
+    .map((grupo) => `
+      <tr class="grupo">
+        <td>${escapeHtml(grupo.numero)}.</td>
+        <td>${escapeHtml(grupo.nome)}</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td>R$ ${fmt(grupo.total)}</td>
+      </tr>
+      ${grupo.itens.map((item) => `
+        <tr>
+          <td>${escapeHtml(item.numero)}</td>
+          <td>${escapeHtml(item.descricao)}</td>
+          <td>${escapeHtml(item.unidade)}</td>
+          <td>${fmt(item.quantidade)}</td>
+          <td>R$ ${fmt(item.unitario)}</td>
+          <td>R$ ${fmt(item.total)}</td>
+          <td></td>
+        </tr>
+      `).join("")}
+    `)
+    .join("");
+
+  const html = `
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(nomeArquivoSeguro(nomeProjeto))}_Proposta</title>
+  <style>
+    @page { size: A4; margin: 16mm 14mm 14mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11px; }
+    .page { min-height: 267mm; page-break-after: always; position: relative; padding-bottom: 18mm; }
+    .page:last-child { page-break-after: auto; }
+    header { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: start; border-bottom: 1px solid #111; padding-bottom: 8px; margin-bottom: 18px; }
+    .prop { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+    .empresa { font-weight: 700; font-size: 13px; letter-spacing: .2px; }
+    .dados { line-height: 1.35; }
+    .pagina { text-align: right; line-height: 1.35; white-space: nowrap; }
+    h1 { text-align: center; font-size: 15px; margin: 24px 0 20px; }
+    h2 { font-size: 12px; margin: 16px 0 8px; }
+    p { margin: 6px 0; line-height: 1.45; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th { background: #d8d8d8; font-weight: 700; text-align: left; }
+    th, td { padding: 4px 5px; vertical-align: top; }
+    .escopo th:nth-child(1), .escopo td:nth-child(1) { width: 9%; }
+    .escopo th:nth-child(2), .escopo td:nth-child(2) { width: 67%; }
+    .escopo th:nth-child(3), .escopo td:nth-child(3) { width: 10%; text-align: center; }
+    .escopo th:nth-child(4), .escopo td:nth-child(4) { width: 14%; text-align: right; }
+    .valores th:nth-child(1), .valores td:nth-child(1) { width: 8%; }
+    .valores th:nth-child(2), .valores td:nth-child(2) { width: 42%; }
+    .valores th:nth-child(3), .valores td:nth-child(3) { width: 8%; text-align: center; }
+    .valores th:nth-child(4), .valores td:nth-child(4) { width: 10%; text-align: right; }
+    .valores th:nth-child(5), .valores td:nth-child(5),
+    .valores th:nth-child(6), .valores td:nth-child(6),
+    .valores th:nth-child(7), .valores td:nth-child(7) { width: 11%; text-align: right; }
+    .grupo td { background: #e2efd9; font-weight: 700; }
+    .total td { background: #e2efd9; font-weight: 700; font-size: 12px; }
+    .total td:first-child { text-align: center; }
+    ul { margin: 6px 0 14px 18px; padding: 0; }
+    li { margin: 5px 0; }
+    .assinatura { margin-top: 48px; width: 260px; border-top: 1px solid #111; text-align: center; padding-top: 6px; }
+    .footer { position: absolute; bottom: 0; left: 0; right: 0; font-size: 10px; color: #555; border-top: 1px solid #ddd; padding-top: 6px; display: flex; justify-content: space-between; }
+    @media screen {
+      body { background: #eee; padding: 20px; }
+      .page { background: white; width: 210mm; margin: 0 auto 20px; padding: 16mm 14mm 14mm; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+      .footer { left: 14mm; right: 14mm; bottom: 10mm; }
+    }
+  </style>
+</head>
+<body>
+  <section class="page">
+    <header>
+      <div>
+        <div class="prop">${escapeHtml(numeroProposta)}</div>
+        <div class="empresa">ALPHA ENGENHARIA E SERVIÇOS</div>
+        <div class="dados">Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
+      </div>
+      <div class="pagina">Página 1 de 3</div>
+    </header>
+    <h1>PROPOSTA DE PRESTAÇÃO DE SERVIÇOS</h1>
+    <p>Belo Horizonte, ${escapeHtml(dataHoje)}</p>
+    <p>Aos cuidados de ${escapeHtml(nomeCliente)}${contato ? ` - ${escapeHtml(contato)}` : ""}.</p>
+    <p><strong>Ref.</strong> ${escapeHtml(nomeProjeto)}</p>
+    <p><strong>Endereço da Obra:</strong> ${escapeHtml(localObra)}</p>
+    <h2>Escopo do Serviço:</h2>
+    <table class="escopo">
+      <thead><tr><th>ITEM</th><th>DESCRIÇÃO DOS SERVIÇOS</th><th>UNID.</th><th>QUANT.</th></tr></thead>
+      <tbody>${linhasEscopo}</tbody>
+    </table>
+    <div class="footer"><span>ALPHA ENGENHARIA E SERVIÇOS</span><span>${escapeHtml(numeroProposta)}</span></div>
+  </section>
+
+  <section class="page">
+    <header>
+      <div>
+        <div class="prop">${escapeHtml(numeroProposta)}</div>
+        <div class="empresa">ALPHA ENGENHARIA E SERVIÇOS</div>
+        <div class="dados">Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
+      </div>
+      <div class="pagina">Página 2 de 3</div>
+    </header>
+    <table class="valores">
+      <thead><tr><th>ITEM</th><th>DESCRIÇÃO DOS SERVIÇOS</th><th>UNID.</th><th>QUANT.</th><th>VALOR UNIT.</th><th>VALOR TOTAL</th><th>TOTAL DO ITEM</th></tr></thead>
+      <tbody>
+        ${linhasValores}
+        <tr class="total"><td colspan="6">TOTAL GERAL</td><td>R$ ${fmt(totalGeral)}</td></tr>
+      </tbody>
+    </table>
+    <h2>PLANILHA DE MATERIAL</h2>
+    <h2>Responsabilidade da ALPHA ENGENHARIA:</h2>
+    <ul>
+      <li>Acompanhamento Técnico;</li>
+      <li>Fornecimento de EPIs para execução das atividades;</li>
+      <li>Fornecimento de mão de obra;</li>
+      <li>Fornecimento de equipamentos;</li>
+      <li>Fornecimento de almoço e transporte para funcionários;</li>
+      <li>Fornecimento de material conforme composição do orçamento.</li>
+    </ul>
+    <h2>Responsabilidade do Cliente:</h2>
+    <ul>
+      <li>Fornecimento de acesso ao local de prestação de serviço;</li>
+      <li>Permitir os funcionários a usarem as instalações sanitárias;</li>
+      <li>Fornecimento de água potável.</li>
+    </ul>
+    <div class="footer"><span>ALPHA ENGENHARIA E SERVIÇOS</span><span>${escapeHtml(numeroProposta)}</span></div>
+  </section>
+
+  <section class="page">
+    <header>
+      <div>
+        <div class="prop">${escapeHtml(numeroProposta)}</div>
+        <div class="empresa">ALPHA ENGENHARIA E SERVIÇOS</div>
+        <div class="dados">Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
+      </div>
+      <div class="pagina">Página 3 de 3</div>
+    </header>
+    <h2>Condições de pagamento:</h2>
+    <p>Entrada de 40% (R$ ${fmt(totalGeral * 0.4)}) e o restante (R$ ${fmt(totalGeral * 0.6)}) conforme avanço dos serviços em medições.</p>
+    <p>Pagamento via PIX (52.903.822/0001-86) 5 dias após a emissão da NF.</p>
+    <h2>Prazo para Execução:</h2>
+    <ul><li>A definir conforme cronograma aprovado entre as partes.</li></ul>
+    ${observacoes ? `<h2>Observações:</h2><p>${escapeHtml(observacoes).replace(/\n/g, "<br/>")}</p>` : ""}
+    <div class="assinatura">ALPHA ENGENHARIA E SERVIÇOS</div>
+    <div class="footer"><span>ALPHA ENGENHARIA E SERVIÇOS</span><span>${escapeHtml(numeroProposta)}</span></div>
+  </section>
+  <script>
+    window.onload = () => {
+      setTimeout(() => window.print(), 350);
+    };
+  </script>
+</body>
+</html>`;
+
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!printWindow) {
+    alert("Não foi possível abrir a janela da proposta. Verifique se o navegador bloqueou pop-ups.");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 };
 
 const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
@@ -1152,6 +1358,22 @@ export default function App() {
                   className="px-2 py-1 text-[11px] font-medium border border-stone-900 text-white bg-stone-900 rounded hover:bg-stone-800 flex items-center gap-1"
                 >
                   <FileText size={12} /> Proposta .xlsx
+                </button>
+
+                <button
+                  onClick={() =>
+                    gerarPropostaPdf({
+                      projeto: projetoAtivo,
+                      cliente: clienteAtivo,
+                      etapas,
+                      bdiCalc,
+                      cpus,
+                      catalogMap,
+                    })
+                  }
+                  className="px-2 py-1 text-[11px] font-medium border border-red-200 text-red-700 bg-red-50/50 rounded hover:bg-red-50 flex items-center gap-1"
+                >
+                  <Download size={12} /> Proposta PDF
                 </button>
 
                 {/* PDF LIMPO DA PLANILHA DE VENDA */}
