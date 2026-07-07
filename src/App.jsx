@@ -128,6 +128,7 @@ const estiloVendaGrupo = {
 
 const estiloVendaTotal = {
   ...estiloVendaGrupo,
+  font: { name: "Aptos Narrow", sz: 11, bold: true },
   alignment: { horizontal: "center", vertical: "center" },
 };
 
@@ -146,35 +147,32 @@ const aplicarFormatoNumerico = (ws, row, cols, formato) => {
   });
 };
 
-const criarAbaVendaModelo = (grupos) => {
-  const rows = [[], [null, "PLANILHA DE MATERIAL"], [null, "ITEM", "DESCRIÇÃO DOS SERVIÇOS", "UNID.", "QUANT.", "VALOR UNIT.", "VALOR TOTAL", "TOTAL DO ITEM"]];
+const criarAbaVendaModelo = (grupos, fatorVenda = 1) => {
+  const rows = [[], [null, "PLANILHA DE MATERIAL"], [null, "ITEM", "DESCRIÇÃO DOS SERVIÇOS", "UNID.", "QUANT.", "VALOR UNIT.", "VALOR TOTAL", "TOTAL DO ITEM", fatorVenda, 250, 150]];
   const groupRows = [];
   const itemRows = [];
 
   grupos.forEach((grupo) => {
     const groupRowNumber = rows.length + 1;
     const itemStartRow = groupRowNumber + 1;
-    rows.push([null, `${grupo.numero}.`, grupo.nome, null, null, null, null, null]);
+    rows.push([null, grupo.numero, grupo.nome, null, null, null, null, grupo.total]);
     groupRows.push({ row: groupRowNumber, itemStartRow });
 
     grupo.itens.forEach((item) => {
       const itemRowNumber = rows.length + 1;
-      rows.push([null, item.numero, item.descricao, item.unidade, item.quantidade, item.unitario, { f: `E${itemRowNumber}*F${itemRowNumber}` }, null]);
+      rows.push([null, item.numero, item.descricao, item.unidade, item.quantidade, item.unitario, item.total, null]);
       itemRows.push(itemRowNumber);
     });
 
     const itemEndRow = rows.length;
     const group = groupRows[groupRows.length - 1];
     group.itemEndRow = itemEndRow;
-    rows[groupRowNumber - 1][7] =
-      itemEndRow >= itemStartRow ? { f: `SUM(G${itemStartRow}:G${itemEndRow})` } : 0;
+    rows[groupRowNumber - 1][7] = grupo.total;
   });
 
   rows.push([]);
   const totalRow = rows.length + 1;
   rows.push([null, "TOTAL GERAL", null, null, null, null, null, { f: `SUM(H4:H${totalRow - 2})` }]);
-  rows.push([null, null, null, null, null, null, null, null, { f: `H${totalRow}*0.4` }]);
-  rows.push([null, null, null, null, null, null, null, null, { f: `H${totalRow}*0.6` }]);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!merges"] = [
@@ -182,22 +180,23 @@ const criarAbaVendaModelo = (grupos) => {
     { s: { r: totalRow - 1, c: 1 }, e: { r: totalRow - 1, c: 6 } },
   ];
   ws["!cols"] = [
-    { wch: 8.86 },
-    { wch: 6 },
-    { wch: 141.43 },
-    { wch: 6.29 },
+    { wch: 8.88671875 },
+    { wch: 5.33203125 },
+    { wch: 56.33203125 },
+    { wch: 6.33203125 },
     { wch: 8 },
-    { wch: 13.29 },
+    { wch: 13.21875 },
     { wch: 14 },
-    { wch: 15.57 },
-    { wch: 13.14 },
-    { wch: 4.14 },
+    { wch: 15.5546875 },
+    { wch: 4.5546875 },
+    { wch: 4 },
   ];
 
   ws["!rows"] = rows.map(() => ({ hpt: 14.25 }));
   aplicarEstiloLinha(ws, 2, 2, 8, estiloVendaTitulo);
   aplicarEstiloLinha(ws, 3, 2, 8, estiloVendaCabecalho);
   aplicarFormatoNumerico(ws, 3, [8], XLSX_MOEDA);
+  aplicarFormatoNumerico(ws, 3, [9], "0.00");
 
   groupRows.forEach(({ row }) => {
     aplicarEstiloLinha(ws, row, 2, 8, estiloVendaGrupo);
@@ -211,8 +210,6 @@ const criarAbaVendaModelo = (grupos) => {
 
   aplicarEstiloLinha(ws, totalRow, 2, 8, estiloVendaTotal);
   aplicarFormatoNumerico(ws, totalRow, [8], XLSX_MOEDA);
-  aplicarFormatoNumerico(ws, totalRow + 1, [9], XLSX_MOEDA);
-  aplicarFormatoNumerico(ws, totalRow + 2, [9], XLSX_MOEDA);
 
   return ws;
 };
@@ -220,8 +217,8 @@ const criarAbaVendaModelo = (grupos) => {
 const exportarPropostaXlsx = ({ projeto, etapas, bdiCalc, cpus, catalogMap }) => {
   const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap);
   const wb = XLSX.utils.book_new();
-  const wsValores = criarAbaVendaModelo(grupos);
-  XLSX.utils.book_append_sheet(wb, wsValores, "ADM - venda");
+  const wsValores = criarAbaVendaModelo(grupos, bdiCalc?.FatorBdi || 1);
+  XLSX.utils.book_append_sheet(wb, wsValores, "VENDA");
   XLSX.writeFile(wb, `${nomeArquivoSeguro(projeto.nome)}_Proposta.xlsx`);
 };
 
