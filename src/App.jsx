@@ -61,13 +61,6 @@ const nomeArquivoSeguro = (valor) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const formatarDataProposta = (data = new Date()) =>
-  data.toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-
 const itemVendaResumo = (item, bdiCalc, cpus, catalogMap) => {
   const quantidade = num(item.quantidade);
   let total = 0;
@@ -224,100 +217,11 @@ const criarAbaVendaModelo = (grupos) => {
   return ws;
 };
 
-const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
-  const dataHoje = formatarDataProposta();
+const exportarPropostaXlsx = ({ projeto, etapas, bdiCalc, cpus, catalogMap }) => {
   const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap);
-  const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
-  const numeroProposta = `PROP - ${new Date().getFullYear().toString().slice(-2)}/${String(new Date().getMonth() + 1).padStart(2, "0")}`;
   const wb = XLSX.utils.book_new();
-
-  const cabecalho = [
-    [numeroProposta],
-    ["ALPHA ENGENHARIA E SERVIÇOS"],
-    ["Rua José Da Costa, 116 - São João Batista"],
-    ["Belo Horizonte"],
-    ["Telefone: 31 9 9203-1783"],
-    [],
-    ["PROPOSTA DE PRESTAÇÃO DE SERVIÇOS"],
-    [],
-    [`Belo Horizonte, ${dataHoje}`],
-    [`Aos cuidados de ${cliente.nome || "Cliente"}.`],
-    [`Ref. ${projeto.nome || "Orçamento"}`],
-    [`Endereço da Obra: ${cliente.local || ""}`],
-    [],
-  ];
-
-  const resumoRows = [
-    ...cabecalho,
-    ["ITEM", "DESCRIÇÃO DOS SERVIÇOS", "UNID.", "QUANT."],
-  ];
-
-  grupos.forEach((grupo) => {
-    resumoRows.push([`${grupo.numero}.`, grupo.nome, "", ""]);
-    grupo.itens.forEach((item) => {
-      resumoRows.push([item.numero, item.descricao, item.unidade, item.quantidade]);
-    });
-  });
-
-  const wsResumo = XLSX.utils.aoa_to_sheet(resumoRows);
-  wsResumo["!merges"] = [
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
-    { s: { r: 6, c: 0 }, e: { r: 6, c: 3 } },
-  ];
-  wsResumo["!cols"] = [{ wch: 10 }, { wch: 70 }, { wch: 10 }, { wch: 12 }];
-  XLSX.utils.book_append_sheet(wb, wsResumo, "Proposta");
-
   const wsValores = criarAbaVendaModelo(grupos);
   XLSX.utils.book_append_sheet(wb, wsValores, "ADM - venda");
-
-  const responsabilidadesRows = [
-    ["PLANILHA DE MATERIAL"],
-    [],
-    ["Responsabilidade da ALPHA ENGENHARIA:"],
-    ["- Acompanhamento Técnico;"],
-    ["- Fornecimento de EPIs para execução das atividades;"],
-    ["- Fornecimento de mão de obra;"],
-    ["- Fornecimento de equipamentos;"],
-    ["- Fornecimento de almoço e transporte para funcionários;"],
-    ["- Fornecimento de material conforme composição do orçamento."],
-    [],
-    ["Responsabilidade do Cliente:"],
-    ["- Fornecimento de acesso ao local de prestação de serviço;"],
-    ["- Permitir os funcionários a usarem as instalações sanitárias;"],
-    ["- Fornecimento de água potável."],
-    [],
-    ["Condições de pagamento:"],
-    ["Entrada de 40% e o restante conforme avanço dos serviços em medições."],
-    ["Pagamento via PIX (52.903.822/0001-86) 5 dias após a emissão da NF."],
-    [],
-    ["Prazo para Execução:"],
-    ["Preencher conforme cronograma aprovado."],
-    [],
-    ["Observações do cliente/orçamento:"],
-    [cliente.observacoes || ""],
-  ];
-  const wsResp = XLSX.utils.aoa_to_sheet(responsabilidadesRows);
-  wsResp["!cols"] = [{ wch: 110 }];
-  XLSX.utils.book_append_sheet(wb, wsResp, "Condições");
-
-  const baseRows = [
-    ["Campo", "Valor"],
-    ["Proposta", numeroProposta],
-    ["Data", dataHoje],
-    ["Orçamento", projeto.nome || ""],
-    ["Cliente", cliente.nome || ""],
-    ["Local da obra", cliente.local || ""],
-    ["Contato", cliente.contato || ""],
-    ["Telefone", cliente.telefone || ""],
-    ["E-mail", cliente.email || ""],
-    ["CPF/CNPJ", cliente.documento || ""],
-    ["Endereço", cliente.endereco || ""],
-    ["Valor total", totalGeral],
-  ];
-  const wsBase = XLSX.utils.aoa_to_sheet(baseRows);
-  wsBase["!cols"] = [{ wch: 24 }, { wch: 70 }];
-  XLSX.utils.book_append_sheet(wb, wsBase, "Dados");
-
   XLSX.writeFile(wb, `${nomeArquivoSeguro(projeto.nome)}_Proposta.xlsx`);
 };
 
@@ -1242,7 +1146,6 @@ export default function App() {
                   onClick={() =>
                     exportarPropostaXlsx({
                       projeto: projetoAtivo,
-                      cliente: clienteAtivo,
                       etapas,
                       bdiCalc,
                       cpus,
