@@ -9,7 +9,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           firebase: ["firebase/app", "firebase/firestore"],
-          xlsx: ["xlsx"],
+          xlsx: ["xlsx-js-style"],
           react: ["react", "react-dom"],
         },
       },

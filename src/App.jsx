@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef, useMemo } from "react";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import {
   Plus, Trash2, Pencil, X, Search, Upload, Download,
   ChevronDown, ChevronRight, Database, Calculator, Copy, Save, Percent, TrendingUp, RefreshCw,
@@ -107,16 +107,121 @@ const montarItensProposta = (etapas, bdiCalc, cpus, catalogMap) =>
     };
   });
 
-const aplicarLargurasProposta = (ws) => {
-  ws["!cols"] = [
-    { wch: 10 },
-    { wch: 58 },
-    { wch: 10 },
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 16 },
-    { wch: 16 },
+const XLSX_MOEDA = '_-"R$"\\ * #,##0.00_-;\\-"R$"\\ * #,##0.00_-;_-"R$"\\ * "-"??_-;_-@';
+const XLSX_NUMERO = "###,###,##0.00";
+
+const estiloVendaBase = {
+  font: { name: "Aptos Narrow", sz: 12 },
+  alignment: { vertical: "center" },
+};
+
+const estiloVendaTitulo = {
+  font: { name: "Aptos Narrow", sz: 14, bold: true },
+  fill: { fgColor: { rgb: "7B9A56" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+};
+
+const estiloVendaCabecalho = {
+  font: { name: "Aptos Narrow", sz: 12, bold: true },
+  fill: { fgColor: { rgb: "D8D8D8" } },
+  alignment: { vertical: "center" },
+};
+
+const estiloVendaGrupo = {
+  font: { name: "Aptos Narrow", sz: 12, bold: true },
+  fill: { fgColor: { rgb: "E2EFD9" } },
+  alignment: { vertical: "center" },
+};
+
+const estiloVendaTotal = {
+  ...estiloVendaGrupo,
+  alignment: { horizontal: "center", vertical: "center" },
+};
+
+const aplicarEstiloLinha = (ws, row, startCol, endCol, style) => {
+  for (let col = startCol; col <= endCol; col += 1) {
+    const addr = XLSX.utils.encode_cell({ r: row - 1, c: col - 1 });
+    if (!ws[addr]) ws[addr] = { t: "s", v: "" };
+    ws[addr].s = style;
+  }
+};
+
+const aplicarFormatoNumerico = (ws, row, cols, formato) => {
+  cols.forEach((col) => {
+    const addr = XLSX.utils.encode_cell({ r: row - 1, c: col - 1 });
+    if (ws[addr]) ws[addr].z = formato;
+  });
+};
+
+const criarAbaVendaModelo = (grupos) => {
+  const rows = [[], [null, "PLANILHA DE MATERIAL"], [null, "ITEM", "DESCRIÇÃO DOS SERVIÇOS", "UNID.", "QUANT.", "VALOR UNIT.", "VALOR TOTAL", "TOTAL DO ITEM"]];
+  const groupRows = [];
+  const itemRows = [];
+
+  grupos.forEach((grupo) => {
+    const groupRowNumber = rows.length + 1;
+    const itemStartRow = groupRowNumber + 1;
+    rows.push([null, `${grupo.numero}.`, grupo.nome, null, null, null, null, null]);
+    groupRows.push({ row: groupRowNumber, itemStartRow });
+
+    grupo.itens.forEach((item) => {
+      const itemRowNumber = rows.length + 1;
+      rows.push([null, item.numero, item.descricao, item.unidade, item.quantidade, item.unitario, { f: `E${itemRowNumber}*F${itemRowNumber}` }, null]);
+      itemRows.push(itemRowNumber);
+    });
+
+    const itemEndRow = rows.length;
+    const group = groupRows[groupRows.length - 1];
+    group.itemEndRow = itemEndRow;
+    rows[groupRowNumber - 1][7] =
+      itemEndRow >= itemStartRow ? { f: `SUM(G${itemStartRow}:G${itemEndRow})` } : 0;
+  });
+
+  rows.push([]);
+  const totalRow = rows.length + 1;
+  rows.push([null, "TOTAL GERAL", null, null, null, null, null, { f: `SUM(H4:H${totalRow - 2})` }]);
+  rows.push([null, null, null, null, null, null, null, null, { f: `H${totalRow}*0.4` }]);
+  rows.push([null, null, null, null, null, null, null, null, { f: `H${totalRow}*0.6` }]);
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws["!merges"] = [
+    { s: { r: 1, c: 1 }, e: { r: 1, c: 7 } },
+    { s: { r: totalRow - 1, c: 1 }, e: { r: totalRow - 1, c: 6 } },
   ];
+  ws["!cols"] = [
+    { wch: 8.86 },
+    { wch: 6 },
+    { wch: 141.43 },
+    { wch: 6.29 },
+    { wch: 8 },
+    { wch: 13.29 },
+    { wch: 14 },
+    { wch: 15.57 },
+    { wch: 13.14 },
+    { wch: 4.14 },
+  ];
+
+  ws["!rows"] = rows.map(() => ({ hpt: 14.25 }));
+  aplicarEstiloLinha(ws, 2, 2, 8, estiloVendaTitulo);
+  aplicarEstiloLinha(ws, 3, 2, 8, estiloVendaCabecalho);
+  aplicarFormatoNumerico(ws, 3, [8], XLSX_MOEDA);
+
+  groupRows.forEach(({ row }) => {
+    aplicarEstiloLinha(ws, row, 2, 8, estiloVendaGrupo);
+    aplicarFormatoNumerico(ws, row, [8], XLSX_MOEDA);
+  });
+
+  itemRows.forEach((row) => {
+    aplicarEstiloLinha(ws, row, 2, 8, estiloVendaBase);
+    aplicarFormatoNumerico(ws, row, [5, 6, 7], XLSX_NUMERO);
+  });
+
+  aplicarEstiloLinha(ws, totalRow, 2, 8, estiloVendaTotal);
+  aplicarFormatoNumerico(ws, totalRow, [8], XLSX_MOEDA);
+  aplicarFormatoNumerico(ws, totalRow + 1, [9], XLSX_MOEDA);
+  aplicarFormatoNumerico(ws, totalRow + 2, [9], XLSX_MOEDA);
+
+  return ws;
 };
 
 const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
@@ -162,26 +267,8 @@ const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalog
   wsResumo["!cols"] = [{ wch: 10 }, { wch: 70 }, { wch: 10 }, { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, wsResumo, "Proposta");
 
-  const valoresRows = [
-    ...cabecalho,
-    ["ITEM", "DESCRIÇÃO DOS SERVIÇOS", "UNID.", "QUANT.", "VALOR UNIT.", "VALOR TOTAL", "TOTAL DO ITEM"],
-  ];
-
-  grupos.forEach((grupo) => {
-    valoresRows.push([`${grupo.numero}.`, grupo.nome, "", "", "", "", grupo.total]);
-    grupo.itens.forEach((item) => {
-      valoresRows.push([item.numero, item.descricao, item.unidade, item.quantidade, item.unitario, item.total, ""]);
-    });
-  });
-  valoresRows.push(["", "", "", "", "", "TOTAL GERAL", totalGeral]);
-
-  const wsValores = XLSX.utils.aoa_to_sheet(valoresRows);
-  wsValores["!merges"] = [
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
-    { s: { r: 6, c: 0 }, e: { r: 6, c: 6 } },
-  ];
-  aplicarLargurasProposta(wsValores);
-  XLSX.utils.book_append_sheet(wb, wsValores, "Planilha de Venda");
+  const wsValores = criarAbaVendaModelo(grupos);
+  XLSX.utils.book_append_sheet(wb, wsValores, "ADM - venda");
 
   const responsabilidadesRows = [
     ["PLANILHA DE MATERIAL"],
