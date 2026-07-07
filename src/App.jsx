@@ -21,6 +21,75 @@ import {
   loadOrcamentoData,
   saveLocalSnapshot,
 } from "./services/orcamentoStore";
+
+const BDI_PADRAO = {
+  custoInicial: 0,
+  admCentral: 0.04,
+  contabilidade: 0.01,
+  contingenciamento: 0.02,
+  custoFinanceiro: 0.03,
+  dasAnexoIV: 0.13,
+  art: 0,
+  lucro: 0.42,
+};
+
+const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
+  const calcularFatorBdiQualquer = (t = {}) => {
+    const ac = num(t.admCentral || t.adminCentral);
+    const c = num(t.contabilidade);
+    const co = num(t.contingenciamento);
+    const cf = num(t.custoFinanceiro);
+    const l = num(t.lucro);
+    const das = num(t.dasAnexoIV || 0);
+    const art = num(t.art);
+    const pv = das + art;
+    const numerador = (1 + ac) * (1 + c) * (1 + co) * (1 + cf) * (1 + l);
+    const denominador = 1 - pv;
+    return denominador <= 0 ? 1 : numerador / denominador;
+  };
+
+  const FatorBdiGeral = calcularFatorBdiQualquer(bdi || BDI_PADRAO);
+  const faturamentoDireto = !!bdi?.faturamentoDireto;
+  const FatorBdiMateriais =
+    faturamentoDireto && bdi?.materiais
+      ? calcularFatorBdiQualquer(bdi.materiais)
+      : FatorBdiGeral;
+
+  let totalCustoDireto = 0;
+  let totalPrecoVenda = 0;
+
+  (etapas || []).forEach((e) => {
+    (e.itens || []).forEach((it) => {
+      const qtdCpu = num(it.quantidade);
+      (it.insumos || []).forEach((ins) => {
+        const tipo = String(ins.tipo || "").toUpperCase().trim();
+        const custoInsumoTotal = num(ins.coeficiente) * qtdCpu * insumoValorUnitario(ins, cpus, catalogMap);
+        totalCustoDireto += custoInsumoTotal;
+
+        if (faturamentoDireto && (tipo === "MAT" || tipo === "MATERIAL" || (!tipo.includes("MO") && !tipo.includes("MÃO") && !tipo.includes("MAO") && !tipo.includes("EQUIP")))) {
+          totalPrecoVenda += custoInsumoTotal * FatorBdiMateriais;
+        } else {
+          totalPrecoVenda += custoInsumoTotal * FatorBdiGeral;
+        }
+      });
+    });
+  });
+
+  const totalDiValor = Math.max(0, totalPrecoVenda - totalCustoDireto);
+  const totalDiRate = totalCustoDireto > 0 ? totalDiValor / totalCustoDireto : 0;
+
+  return {
+    bdiRate: FatorBdiGeral - 1,
+    bdiRateMateriais: FatorBdiMateriais - 1,
+    FatorBdi: FatorBdiGeral,
+    FatorBdiMateriais,
+    faturamentoDireto,
+    totalDiValor,
+    totalDiRate,
+    valorVenda: totalPrecoVenda,
+  };
+};
+
 export default function App() {
   const [tab, setTab] = useState("projetos");
   const [cpus, setCpusState] = useState([]);
@@ -149,9 +218,7 @@ export default function App() {
   }, [projetos, projetoAtivoId]);
 
   const etapas = useMemo(() => projetoAtivo?.etapas || [], [projetoAtivo]);
-  const bdi = useMemo(() => projetoAtivo?.bdi || {
-    custoInicial: 0, admCentral: 0.04, contabilidade: 0.01, contingenciamento: 0.02, custoFinanceiro: 0.03, dasAnexoIV: 0.13, art: 0, lucro: 0.42
-  }, [projetoAtivo]);
+  const bdi = useMemo(() => projetoAtivo?.bdi || BDI_PADRAO, [projetoAtivo]);
 
   const setEtapas = (novasEtapas) => {
     if (!projetoAtivoId) return;
@@ -274,63 +341,7 @@ export default function App() {
   }, [etapas, cpus, catalogMap]);
 
   const bdiCalc = useMemo(() => {
-    const calcularFatorBdiQualquer = (t) => {
-      const ac = num(t.admCentral);
-      const c = num(t.contabilidade);
-      const co = num(t.contingenciamento);
-      const cf = num(t.custoFinanceiro);
-      const l = num(t.lucro);
-      const das = num(t.dasAnexoIV);
-      const art = num(t.art);
-
-      const pv = das + art;
-      const numerador = (1 + ac) * (1 + c) * (1 + co) * (1 + cf) * (1 + l);
-      const denominador = 1 - pv;
-      return denominador <= 0 ? 1 : numerador / denominador;
-    };
-
-    const FatorBdiGeral = calcularFatorBdiQualquer(bdi);
-    
-    const faturamentoDireto = !!bdi.faturamentoDireto;
-    const FatorBdiMateriais = (faturamentoDireto && bdi.materiais) 
-      ? calcularFatorBdiQualquer(bdi.materiais) 
-      : FatorBdiGeral;
-
-    // Calcular o preço de venda de forma ponderada analisando insumo por insumo
-    let totalCustoDireto = 0;
-    let totalPrecoVenda = 0;
-
-    (etapas || []).forEach(e => {
-      (e.itens || []).forEach(it => {
-        const qtdCpu = num(it.quantidade);
-        (it.insumos || []).forEach(ins => {
-          const tipo = String(ins.tipo || "").toUpperCase().trim();
-          const custoInsumoTotal = num(ins.coeficiente) * qtdCpu * insumoValorUnitario(ins, cpus, catalogMap);
-          totalCustoDireto += custoInsumoTotal;
-
-          // Se for Material (MAT ou MATERIAL) usa o BDI de materiais, senão usa o Geral
-          if (faturamentoDireto && (tipo === "MAT" || tipo === "MATERIAL" || (!tipo.includes("MO") && !tipo.includes("MÃO") && !tipo.includes("MAO") && !tipo.includes("EQUIP")))) {
-            totalPrecoVenda += custoInsumoTotal * FatorBdiMateriais;
-          } else {
-            totalPrecoVenda += custoInsumoTotal * FatorBdiGeral;
-          }
-        });
-      });
-    });
-
-    const totalDiValor = Math.max(0, totalPrecoVenda - totalCustoDireto);
-    const totalDiRate = totalCustoDireto > 0 ? (totalDiValor / totalCustoDireto) : 0;
-
-    return {
-      bdiRate: FatorBdiGeral - 1,
-      bdiRateMateriais: FatorBdiMateriais - 1,
-      FatorBdi: FatorBdiGeral,
-      FatorBdiMateriais: FatorBdiMateriais,
-      faturamentoDireto: faturamentoDireto,
-      totalDiValor: totalDiValor,
-      totalDiRate: totalDiRate,
-      valorVenda: totalPrecoVenda
-    };
+    return calcularPrecoVendaProjeto(etapas, bdi, cpus, catalogMap);
   }, [bdi, etapas, cpus, catalogMap]);
 
   // Abas disponíveis apenas dentro de um projeto ativo
@@ -487,43 +498,7 @@ export default function App() {
                   0
                 );
 
-                // Calcula o preço final ponderado analisando insumo por insumo deste projeto específico
-                const valorVendaCalculado = (() => {
-                  const calcFator = (t) => {
-                    const ac = num(t.admCentral || t.adminCentral);
-                    const c = num(t.contabilidade);
-                    const co = num(t.contingenciamento);
-                    const cf = num(t.custoFinanceiro);
-                    const l = num(t.lucro);
-                    const das = num(t.dasAnexoIV || 0);
-                    const art = num(t.art);
-                    const pv = das + art;
-                    const numr = (1 + ac) * (1 + c) * (1 + co) * (1 + cf) * (1 + l);
-                    const den = 1 - pv;
-                    return den <= 0 ? 1 : numr / den;
-                  };
-
-                  const fGeral = calcFator(p.bdi || {});
-                  const fatDireto = !!p.bdi?.faturamentoDireto;
-                  const fMats = (fatDireto && p.bdi?.materiais) ? calcFator(p.bdi.materiais) : fGeral;
-
-                  let totalVenda = 0;
-                  (p.etapas || []).forEach(e => {
-                    (e.itens || []).forEach(it => {
-                      const qCpu = num(it.quantidade);
-                      (it.insumos || []).forEach(ins => {
-                        const tIn = String(ins.tipo || "").toUpperCase().trim();
-                        const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
-                        if (fatDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")))) {
-                          totalVenda += cIn * fMats;
-                        } else {
-                          totalVenda += cIn * fGeral;
-                        }
-                      });
-                    });
-                  });
-                  return totalVenda;
-                })();
+                const valorVendaCalculado = calcularPrecoVendaProjeto(p.etapas || [], p.bdi || BDI_PADRAO, cpus, catalogMap).valorVenda;
 
                 return (
                   <div
