@@ -53,6 +53,187 @@ const clienteDoProjeto = (projeto) => ({
 const clienteEstaCompleto = (cliente) =>
   Boolean(String(cliente?.nome || "").trim() && String(cliente?.local || "").trim());
 
+const nomeArquivoSeguro = (valor) =>
+  String(valor || "Orcamento")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const formatarDataProposta = (data = new Date()) =>
+  data.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+const itemVendaResumo = (item, bdiCalc, cpus, catalogMap) => {
+  const quantidade = num(item.quantidade);
+  let total = 0;
+
+  (item.insumos || []).forEach((ins) => {
+    const tipo = String(ins.tipo || "").toUpperCase().trim();
+    const custoBase = num(ins.coeficiente) * quantidade * insumoValorUnitario(ins, cpus, catalogMap);
+    const isMat =
+      bdiCalc.faturamentoDireto &&
+      (tipo === "MAT" ||
+        tipo === "MATERIAL" ||
+        (!tipo.includes("MO") && !tipo.includes("MÃO") && !tipo.includes("MAO") && !tipo.includes("EQUIP")));
+    total += custoBase * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
+  });
+
+  return {
+    quantidade,
+    total,
+    unitario: quantidade > 0 ? total / quantidade : 0,
+  };
+};
+
+const montarItensProposta = (etapas, bdiCalc, cpus, catalogMap) =>
+  (etapas || []).map((etapa, idxEtapa) => {
+    const itens = (etapa.itens || []).map((item, idxItem) => ({
+      numero: `${idxEtapa + 1}.${idxItem + 1}`,
+      descricao: item.servico || item.descricao || "",
+      unidade: item.unidade || "",
+      ...itemVendaResumo(item, bdiCalc, cpus, catalogMap),
+    }));
+
+    return {
+      numero: String(idxEtapa + 1),
+      nome: etapa.nome || `Etapa ${idxEtapa + 1}`,
+      total: itens.reduce((s, item) => s + item.total, 0),
+      itens,
+    };
+  });
+
+const aplicarLargurasProposta = (ws) => {
+  ws["!cols"] = [
+    { wch: 10 },
+    { wch: 58 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 16 },
+  ];
+};
+
+const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
+  const dataHoje = formatarDataProposta();
+  const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap);
+  const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
+  const numeroProposta = `PROP - ${new Date().getFullYear().toString().slice(-2)}/${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const wb = XLSX.utils.book_new();
+
+  const cabecalho = [
+    [numeroProposta],
+    ["ALPHA ENGENHARIA E SERVIÇOS"],
+    ["Rua José Da Costa, 116 - São João Batista"],
+    ["Belo Horizonte"],
+    ["Telefone: 31 9 9203-1783"],
+    [],
+    ["PROPOSTA DE PRESTAÇÃO DE SERVIÇOS"],
+    [],
+    [`Belo Horizonte, ${dataHoje}`],
+    [`Aos cuidados de ${cliente.nome || "Cliente"}.`],
+    [`Ref. ${projeto.nome || "Orçamento"}`],
+    [`Endereço da Obra: ${cliente.local || ""}`],
+    [],
+  ];
+
+  const resumoRows = [
+    ...cabecalho,
+    ["ITEM", "DESCRIÇÃO DOS SERVIÇOS", "UNID.", "QUANT."],
+  ];
+
+  grupos.forEach((grupo) => {
+    resumoRows.push([`${grupo.numero}.`, grupo.nome, "", ""]);
+    grupo.itens.forEach((item) => {
+      resumoRows.push([item.numero, item.descricao, item.unidade, item.quantidade]);
+    });
+  });
+
+  const wsResumo = XLSX.utils.aoa_to_sheet(resumoRows);
+  wsResumo["!merges"] = [
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+    { s: { r: 6, c: 0 }, e: { r: 6, c: 3 } },
+  ];
+  wsResumo["!cols"] = [{ wch: 10 }, { wch: 70 }, { wch: 10 }, { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, wsResumo, "Proposta");
+
+  const valoresRows = [
+    ...cabecalho,
+    ["ITEM", "DESCRIÇÃO DOS SERVIÇOS", "UNID.", "QUANT.", "VALOR UNIT.", "VALOR TOTAL", "TOTAL DO ITEM"],
+  ];
+
+  grupos.forEach((grupo) => {
+    valoresRows.push([`${grupo.numero}.`, grupo.nome, "", "", "", "", grupo.total]);
+    grupo.itens.forEach((item) => {
+      valoresRows.push([item.numero, item.descricao, item.unidade, item.quantidade, item.unitario, item.total, ""]);
+    });
+  });
+  valoresRows.push(["", "", "", "", "", "TOTAL GERAL", totalGeral]);
+
+  const wsValores = XLSX.utils.aoa_to_sheet(valoresRows);
+  wsValores["!merges"] = [
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+    { s: { r: 6, c: 0 }, e: { r: 6, c: 6 } },
+  ];
+  aplicarLargurasProposta(wsValores);
+  XLSX.utils.book_append_sheet(wb, wsValores, "Planilha de Venda");
+
+  const responsabilidadesRows = [
+    ["PLANILHA DE MATERIAL"],
+    [],
+    ["Responsabilidade da ALPHA ENGENHARIA:"],
+    ["- Acompanhamento Técnico;"],
+    ["- Fornecimento de EPIs para execução das atividades;"],
+    ["- Fornecimento de mão de obra;"],
+    ["- Fornecimento de equipamentos;"],
+    ["- Fornecimento de almoço e transporte para funcionários;"],
+    ["- Fornecimento de material conforme composição do orçamento."],
+    [],
+    ["Responsabilidade do Cliente:"],
+    ["- Fornecimento de acesso ao local de prestação de serviço;"],
+    ["- Permitir os funcionários a usarem as instalações sanitárias;"],
+    ["- Fornecimento de água potável."],
+    [],
+    ["Condições de pagamento:"],
+    ["Entrada de 40% e o restante conforme avanço dos serviços em medições."],
+    ["Pagamento via PIX (52.903.822/0001-86) 5 dias após a emissão da NF."],
+    [],
+    ["Prazo para Execução:"],
+    ["Preencher conforme cronograma aprovado."],
+    [],
+    ["Observações do cliente/orçamento:"],
+    [cliente.observacoes || ""],
+  ];
+  const wsResp = XLSX.utils.aoa_to_sheet(responsabilidadesRows);
+  wsResp["!cols"] = [{ wch: 110 }];
+  XLSX.utils.book_append_sheet(wb, wsResp, "Condições");
+
+  const baseRows = [
+    ["Campo", "Valor"],
+    ["Proposta", numeroProposta],
+    ["Data", dataHoje],
+    ["Orçamento", projeto.nome || ""],
+    ["Cliente", cliente.nome || ""],
+    ["Local da obra", cliente.local || ""],
+    ["Contato", cliente.contato || ""],
+    ["Telefone", cliente.telefone || ""],
+    ["E-mail", cliente.email || ""],
+    ["CPF/CNPJ", cliente.documento || ""],
+    ["Endereço", cliente.endereco || ""],
+    ["Valor total", totalGeral],
+  ];
+  const wsBase = XLSX.utils.aoa_to_sheet(baseRows);
+  wsBase["!cols"] = [{ wch: 24 }, { wch: 70 }];
+  XLSX.utils.book_append_sheet(wb, wsBase, "Dados");
+
+  XLSX.writeFile(wb, `${nomeArquivoSeguro(projeto.nome)}_Proposta.xlsx`);
+};
+
 const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
   const calcularFatorBdiQualquer = (t = {}) => {
     const ac = num(t.admCentral || t.adminCentral);
@@ -943,7 +1124,7 @@ export default function App() {
                         let totalItemVenda = 0;
                         (item.insumos || []).forEach(ins => {
                           const tIn = String(ins.tipo || "").toUpperCase().trim();
-                          const cIn = num(ins.coeficiente) * num(item.quantidade) * num(ins.valorUnitario);
+                          const cIn = num(ins.coeficiente) * num(item.quantidade) * insumoValorUnitario(ins, cpus, catalogMap);
                           const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
                           totalItemVenda += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
                         });
@@ -952,8 +1133,7 @@ export default function App() {
                         
                         (item.insumos || []).forEach((ins, idxIn) => {
                           const tIn = String(ins.tipo || "").toUpperCase().trim();
-                          const entry = catalogMap.get(precoKey(ins.descricao));
-                          const custoUnit = entry && entry.valorUnitario !== "" ? num(entry.valorUnitario) : num(ins.valorUnitario);
+                          const custoUnit = insumoValorUnitario(ins, cpus, catalogMap);
                           const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
                           const fatBdi = isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi;
                           
@@ -969,6 +1149,22 @@ export default function App() {
                   className="px-2 py-1 text-[11px] font-medium border border-emerald-200 text-emerald-700 bg-emerald-50/50 rounded hover:bg-emerald-50 flex items-center gap-1"
                 >
                   <Download size={12} /> Excel (.xlsx)
+                </button>
+
+                <button
+                  onClick={() =>
+                    exportarPropostaXlsx({
+                      projeto: projetoAtivo,
+                      cliente: clienteAtivo,
+                      etapas,
+                      bdiCalc,
+                      cpus,
+                      catalogMap,
+                    })
+                  }
+                  className="px-2 py-1 text-[11px] font-medium border border-stone-900 text-white bg-stone-900 rounded hover:bg-stone-800 flex items-center gap-1"
+                >
+                  <FileText size={12} /> Proposta .xlsx
                 </button>
 
                 {/* PDF LIMPO DA PLANILHA DE VENDA */}
