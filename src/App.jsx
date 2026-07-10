@@ -2785,6 +2785,7 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
 
   // NOVO: Controla quais itens da etapa estão expandidos (mostrando insumos)
   const [itensExpandidos, setItensExpandidos] = useState({});
+  const [etapasRecolhidas, setEtapasRecolhidas] = useState({});
 
   const cpuSearchIndex = useMemo(
     () =>
@@ -2870,6 +2871,10 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
     setItensExpandidos((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
   };
 
+  const toggleRecolherEtapa = (etapaId) => {
+    setEtapasRecolhidas((prev) => ({ ...prev, [etapaId]: !prev[etapaId] }));
+  };
+
   const obterCpusFiltradas = (textoBusca) => {
     if (!textoBusca || !textoBusca.trim()) return [];
     const searchTerms = norm(textoBusca).split(/\s+/).filter(Boolean);
@@ -2924,27 +2929,66 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
           const termoBuscaEtapa = buscasPorEtapa[e.id] || "";
           const filtradasParaEstaEtapa = obterCpusFiltradas(termoBuscaEtapa);
           const activeIndex = activeIndices[e.id] !== undefined ? activeIndices[e.id] : -1;
+          const etapaRecolhida = !!etapasRecolhidas[e.id];
+          const totalEtapa = (e.itens || []).reduce(
+            (s, it) => s + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap),
+            0
+          );
 
           return (
             <div key={e.id} className="bg-white border border-stone-200 rounded-lg overflow-visible">
-              <div className="bg-stone-50/70 px-4 py-2.5 flex justify-between items-center border-b border-stone-200">
-                {editingEtapaId === e.id ? (
-                  <div className="flex items-center gap-2">
-                    <input value={editingEtapaNome} onChange={(e) => setEditingEtapaNome(e.target.value)} className="border border-stone-300 text-xs rounded px-2 py-1 bg-white" />
-                    <button onClick={() => salvarNomeEtapa(e.id)} className="text-stone-800 font-bold text-xs">Salvar</button>
+              <div
+                onClick={() => toggleRecolherEtapa(e.id)}
+                className="bg-stone-200 px-4 py-2.5 flex justify-between items-center gap-3 border-b border-stone-300 cursor-pointer select-none hover:bg-stone-300"
+              >
+                <div className="min-w-0 flex items-center gap-2">
+                  {etapaRecolhida ? (
+                    <ChevronRight size={15} className="text-stone-400 shrink-0" />
+                  ) : (
+                    <ChevronDown size={15} className="text-stone-400 shrink-0" />
+                  )}
+                  {editingEtapaId === e.id ? (
+                    <div className="flex items-center gap-2" onClick={(evt) => evt.stopPropagation()}>
+                      <input value={editingEtapaNome} onChange={(e) => setEditingEtapaNome(e.target.value)} className="border border-stone-300 text-xs rounded px-2 py-1 bg-white" />
+                      <button onClick={() => salvarNomeEtapa(e.id)} className="text-stone-800 font-bold text-xs">Salvar</button>
+                    </div>
+                  ) : (
+                    <h3 className="font-medium text-sm text-stone-800 flex items-center gap-2 min-w-0">
+                      <span className="truncate">{e.nome}</span>
+                      <button
+                        onClick={(evt) => {
+                          evt.stopPropagation();
+                          setEditingEtapaId(e.id);
+                          setEditingEtapaNome(e.nome);
+                        }}
+                        className="text-stone-400 hover:text-stone-700 shrink-0"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </h3>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 shrink-0">
+                  <div className="text-right">
+                    <span className="block text-[10px] text-stone-400 font-mono uppercase">Total da etapa</span>
+                    <span className="font-semibold text-stone-900 font-mono text-sm">R$ {fmt(totalEtapa)}</span>
                   </div>
-                ) : (
-                  <h3 className="font-medium text-sm text-stone-800 flex items-center gap-2">
-                    {e.nome}
-                    <button onClick={() => { setEditingEtapaId(e.id); setEditingEtapaNome(e.nome); }} className="text-stone-400 hover:text-stone-700"><Pencil size={12} /></button>
-                  </h3>
-                )}
-                {etapas.length > 1 && (
-                  <button onClick={() => removerEtapa(e.id)} className="text-stone-400 hover:text-red-500"><Trash2 size={14} /></button>
-                )}
+                  {etapas.length > 1 && (
+                    <button
+                      onClick={(evt) => {
+                        evt.stopPropagation();
+                        removerEtapa(e.id);
+                      }}
+                      className="text-stone-400 hover:text-red-500"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Contêiner expande dinamicamente ao digitar na busca */}
+              {!etapaRecolhida && (
               <div className={`p-4 space-y-3 transition-all ${termoBuscaEtapa.trim() ? "min-h-[400px]" : "min-h-0"}`}>
                 {/* Campo de busca exclusivo DESTA ETAPA - LARGURA TOTAL */}
                 <div className="relative w-full mb-3">
@@ -3041,6 +3085,7 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                   );
                 })}
               </div>
+              )}
             </div>
           );
         })}
