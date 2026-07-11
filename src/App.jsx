@@ -21,6 +21,7 @@ import {
   loadOrcamentoData,
   saveLocalSnapshot,
 } from "./services/orcamentoStore";
+import alphaLogo from "./assets/alpha-engenharia-logo.png";
 
 const BDI_PADRAO = {
   custoInicial: 0,
@@ -838,13 +839,20 @@ export default function App() {
         <main className="min-w-0 flex-1">
         {/* HEADER */}
         <header className="flex items-center justify-between mb-6 gap-4">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">Orçamentador por CPU</h1>
-            <p className="text-sm text-stone-500 truncate">
-              {projetoAtivo
-                ? `Orçamento: ${projetoAtivo.nome}  -  ${clienteAtivo.nome || "Cliente não cadastrado"}`
-                : "Crie ou selecione um orçamento para começar"}
-            </p>
+          <div className="min-w-0 flex items-center gap-3">
+            <img
+              src={alphaLogo}
+              alt="Alpha Engenharia"
+              className="w-14 h-14 rounded-sm object-cover shrink-0"
+            />
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold tracking-tight">Orçamentador por CPU</h1>
+              <p className="text-sm text-stone-500 truncate">
+                {projetoAtivo
+                  ? `Orçamento: ${projetoAtivo.nome}  -  ${clienteAtivo.nome || "Cliente não cadastrado"}`
+                  : "Crie ou selecione um orçamento para começar"}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <span className="text-xs text-stone-400 min-h-4">{status}</span>
