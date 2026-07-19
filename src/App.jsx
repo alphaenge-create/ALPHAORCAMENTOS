@@ -43,7 +43,36 @@ const CLIENTE_PADRAO = {
   email: "",
   documento: "",
   endereco: "",
+  numeroProposta: "",
+  prazoExecucao: "",
+  condicoesPagamento: "",
+  responsabilidadesAlpha: "",
+  responsabilidadesCliente: "",
   observacoes: "",
+};
+
+const RESPONSABILIDADES_ALPHA_PADRAO = [
+  "Acompanhamento Técnico;",
+  "Fornecimento de EPIs para execução das atividades;",
+  "Fornecimento de mão de obra;",
+  "Fornecimento de equipamentos;",
+  "Fornecimento de almoço e transporte para funcionários;",
+  "Fornecimento de material conforme composição do orçamento.",
+];
+
+const RESPONSABILIDADES_CLIENTE_PADRAO = [
+  "Fornecimento de acesso ao local de prestação de serviço;",
+  "Permitir os funcionários a usarem as instalações sanitárias;",
+  "Fornecimento de água potável, água bruta e energia;",
+  "Local para armazenamento de materiais e equipamentos;",
+];
+
+const listaTextoOuPadrao = (texto, padrao) => {
+  const linhas = String(texto || "")
+    .split(/\r?\n/)
+    .map((linha) => linha.trim())
+    .filter(Boolean);
+  return linhas.length ? linhas : padrao;
 };
 
 const clienteDoProjeto = (projeto) => ({
@@ -237,12 +266,18 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
   const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
   const hoje = new Date();
   const dataHoje = hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-  const numeroProposta = `PROP - ${String(hoje.getMonth() + 1).padStart(2, "0")}/${String(hoje.getFullYear()).slice(-2)}`;
+  const numeroProposta = cliente?.numeroProposta || `PROP - ${String(hoje.getMonth() + 1).padStart(2, "0")}/${String(hoje.getFullYear()).slice(-2)}`;
   const nomeProjeto = projeto?.nome || "Orçamento";
   const nomeCliente = cliente?.nome || "Cliente";
   const localObra = cliente?.local || cliente?.endereco || "";
   const contato = cliente?.contato || "";
   const observacoes = cliente?.observacoes || "";
+  const prazoExecucao = cliente?.prazoExecucao || "A definir conforme cronograma aprovado entre as partes.";
+  const condicoesPagamento =
+    cliente?.condicoesPagamento ||
+    `Entrada de 40% (R$ ${fmt(totalGeral * 0.4)}) e o restante (R$ ${fmt(totalGeral * 0.6)}) conforme avanço dos serviços em medições.`;
+  const responsabilidadesAlpha = listaTextoOuPadrao(cliente?.responsabilidadesAlpha, RESPONSABILIDADES_ALPHA_PADRAO);
+  const responsabilidadesCliente = listaTextoOuPadrao(cliente?.responsabilidadesCliente, RESPONSABILIDADES_CLIENTE_PADRAO);
 
   const linhasEscopo = grupos
     .map((grupo) => `
@@ -288,6 +323,9 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     `)
     .join("");
 
+  const listaResponsabilidadesAlpha = responsabilidadesAlpha.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const listaResponsabilidadesCliente = responsabilidadesCliente.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+
   const html = `
 <!doctype html>
 <html lang="pt-BR">
@@ -295,22 +333,21 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
   <meta charset="utf-8" />
   <title>${escapeHtml(nomeArquivoSeguro(nomeProjeto))}_Proposta</title>
   <style>
-    @page { size: A4; margin: 16mm 14mm 14mm; }
+    @page { size: A4; margin: 15mm 14mm 14mm; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11px; }
-    .page { min-height: 267mm; page-break-after: always; position: relative; padding-bottom: 18mm; }
+    .page { min-height: 268mm; page-break-after: always; position: relative; padding-bottom: 20mm; }
     .page:last-child { page-break-after: auto; }
-    header { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: start; border-bottom: 1px solid #111; padding-bottom: 8px; margin-bottom: 18px; }
-    .prop { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
-    .empresa { font-weight: 700; font-size: 13px; letter-spacing: .2px; }
-    .dados { line-height: 1.35; }
-    .pagina { text-align: right; line-height: 1.35; white-space: nowrap; }
-    h1 { text-align: center; font-size: 15px; margin: 24px 0 20px; }
-    h2 { font-size: 12px; margin: 16px 0 8px; }
+    header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; }
+    .prop { font-weight: 700; font-size: 12px; }
+    .pagina-topo { color: transparent; font-size: 10px; }
+    h1 { text-align: center; font-size: 15px; margin: 26px 0 24px; }
+    h2 { font-size: 12px; margin: 14px 0 8px; }
     p { margin: 6px 0; line-height: 1.45; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     th { background: #d8d8d8; font-weight: 700; text-align: left; }
     th, td { padding: 4px 5px; vertical-align: top; }
+    tbody tr { page-break-inside: avoid; }
     .escopo th:nth-child(1), .escopo td:nth-child(1) { width: 9%; }
     .escopo th:nth-child(2), .escopo td:nth-child(2) { width: 67%; }
     .escopo th:nth-child(3), .escopo td:nth-child(3) { width: 10%; text-align: center; }
@@ -328,7 +365,10 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     ul { margin: 6px 0 14px 18px; padding: 0; }
     li { margin: 5px 0; }
     .assinatura { margin-top: 48px; width: 260px; border-top: 1px solid #111; text-align: center; padding-top: 6px; }
-    .footer { position: absolute; bottom: 0; left: 0; right: 0; font-size: 10px; color: #555; border-top: 1px solid #ddd; padding-top: 6px; display: flex; justify-content: space-between; }
+    .footer { position: absolute; bottom: 0; left: 0; right: 0; font-size: 10px; color: #111; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+    .footer strong { display: block; font-weight: 700; margin-bottom: 2px; }
+    .footer .endereco { line-height: 1.35; }
+    .footer .pagina { white-space: nowrap; }
     @media screen {
       body { background: #eee; padding: 20px; }
       .page { background: white; width: 210mm; margin: 0 auto 20px; padding: 16mm 14mm 14mm; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
@@ -339,12 +379,8 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
 <body>
   <section class="page">
     <header>
-      <div>
-        <div class="prop">${escapeHtml(numeroProposta)}</div>
-        <div class="empresa">ALPHA ENGENHARIA E SERVIÇOS</div>
-        <div class="dados">Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
-      </div>
-      <div class="pagina">Página 1 de 3</div>
+      <div class="prop">${escapeHtml(numeroProposta)}</div>
+      <div class="pagina-topo">Página 1 de 3</div>
     </header>
     <h1>PROPOSTA DE PRESTAÇÃO DE SERVIÇOS</h1>
     <p>Belo Horizonte, ${escapeHtml(dataHoje)}</p>
@@ -356,18 +392,24 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
       <thead><tr><th>ITEM</th><th>DESCRIÇÃO DOS SERVIÇOS</th><th>UNID.</th><th>QUANT.</th></tr></thead>
       <tbody>${linhasEscopo}</tbody>
     </table>
-    <div class="footer"><span>ALPHA ENGENHARIA E SERVIÇOS</span><span>${escapeHtml(numeroProposta)}</span></div>
+    <div class="footer">
+      <div class="endereco"><strong>ALPHA ENGENHARIA E SERVIÇOS</strong>Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
+      <div class="pagina">Página 1 de 3</div>
+    </div>
   </section>
 
   <section class="page">
     <header>
-      <div>
-        <div class="prop">${escapeHtml(numeroProposta)}</div>
-        <div class="empresa">ALPHA ENGENHARIA E SERVIÇOS</div>
-        <div class="dados">Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
-      </div>
-      <div class="pagina">Página 2 de 3</div>
+      <div class="prop">${escapeHtml(numeroProposta)}</div>
+      <div class="pagina-topo">Página 2 de 3</div>
     </header>
+    <h2>Responsabilidade da ALPHA ENGENHARIA:</h2>
+    <ul>${listaResponsabilidadesAlpha}</ul>
+    <h2>Responsabilidade do Cliente:</h2>
+    <ul>${listaResponsabilidadesCliente}</ul>
+    <h2>Valores:</h2>
+    <p>Segue relação da mão de obra especializada para execução e acompanhamento dos serviços apresentados em visita técnica, totalizando o valor de <strong>R$ ${fmt(totalGeral)}</strong>.</p>
+    <h2>PLANILHA DE MATERIAL</h2>
     <table class="valores">
       <thead><tr><th>ITEM</th><th>DESCRIÇÃO DOS SERVIÇOS</th><th>UNID.</th><th>QUANT.</th><th>VALOR UNIT.</th><th>VALOR TOTAL</th><th>TOTAL DO ITEM</th></tr></thead>
       <tbody>
@@ -375,42 +417,28 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
         <tr class="total"><td colspan="6">TOTAL GERAL</td><td>R$ ${fmt(totalGeral)}</td></tr>
       </tbody>
     </table>
-    <h2>PLANILHA DE MATERIAL</h2>
-    <h2>Responsabilidade da ALPHA ENGENHARIA:</h2>
-    <ul>
-      <li>Acompanhamento Técnico;</li>
-      <li>Fornecimento de EPIs para execução das atividades;</li>
-      <li>Fornecimento de mão de obra;</li>
-      <li>Fornecimento de equipamentos;</li>
-      <li>Fornecimento de almoço e transporte para funcionários;</li>
-      <li>Fornecimento de material conforme composição do orçamento.</li>
-    </ul>
-    <h2>Responsabilidade do Cliente:</h2>
-    <ul>
-      <li>Fornecimento de acesso ao local de prestação de serviço;</li>
-      <li>Permitir os funcionários a usarem as instalações sanitárias;</li>
-      <li>Fornecimento de água potável.</li>
-    </ul>
-    <div class="footer"><span>ALPHA ENGENHARIA E SERVIÇOS</span><span>${escapeHtml(numeroProposta)}</span></div>
+    <div class="footer">
+      <div class="endereco"><strong>ALPHA ENGENHARIA E SERVIÇOS</strong>Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
+      <div class="pagina">Página 2 de 3</div>
+    </div>
   </section>
 
   <section class="page">
     <header>
-      <div>
-        <div class="prop">${escapeHtml(numeroProposta)}</div>
-        <div class="empresa">ALPHA ENGENHARIA E SERVIÇOS</div>
-        <div class="dados">Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
-      </div>
-      <div class="pagina">Página 3 de 3</div>
+      <div class="prop">${escapeHtml(numeroProposta)}</div>
+      <div class="pagina-topo">Página 3 de 3</div>
     </header>
     <h2>Condições de pagamento:</h2>
-    <p>Entrada de 40% (R$ ${fmt(totalGeral * 0.4)}) e o restante (R$ ${fmt(totalGeral * 0.6)}) conforme avanço dos serviços em medições.</p>
+    <p>${escapeHtml(condicoesPagamento).replace(/\n/g, "<br/>")}</p>
     <p>Pagamento via PIX (52.903.822/0001-86) 5 dias após a emissão da NF.</p>
     <h2>Prazo para Execução:</h2>
-    <ul><li>A definir conforme cronograma aprovado entre as partes.</li></ul>
+    <ul><li>${escapeHtml(prazoExecucao)}</li></ul>
     ${observacoes ? `<h2>Observações:</h2><p>${escapeHtml(observacoes).replace(/\n/g, "<br/>")}</p>` : ""}
     <div class="assinatura">ALPHA ENGENHARIA E SERVIÇOS</div>
-    <div class="footer"><span>ALPHA ENGENHARIA E SERVIÇOS</span><span>${escapeHtml(numeroProposta)}</span></div>
+    <div class="footer">
+      <div class="endereco"><strong>ALPHA ENGENHARIA E SERVIÇOS</strong>Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
+      <div class="pagina">Página 3 de 3</div>
+    </div>
   </section>
   <script>
     window.onload = () => {
@@ -1844,6 +1872,49 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
           </div>
         </div>
 
+        <div className="border border-stone-200 rounded-lg p-4 space-y-4">
+          <h3 className="text-sm font-semibold text-stone-800 flex items-center gap-2">
+            <FileText size={15} /> Dados da proposta
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <CampoCliente
+              label="Número da proposta"
+              value={cliente.numeroProposta || ""}
+              onChange={(valor) => atualizarCampo("numeroProposta", valor)}
+              icon={<FileText size={14} />}
+              placeholder="Ex.: PROP - 13/26"
+            />
+            <CampoCliente
+              label="Prazo para execução"
+              value={cliente.prazoExecucao || ""}
+              onChange={(valor) => atualizarCampo("prazoExecucao", valor)}
+              icon={<FileText size={14} />}
+              placeholder="Ex.: 60 dias úteis"
+            />
+            <CampoCliente
+              label="Condições de pagamento"
+              value={cliente.condicoesPagamento || ""}
+              onChange={(valor) => atualizarCampo("condicoesPagamento", valor)}
+              icon={<FileText size={14} />}
+              placeholder="Ex.: Entrada de 40% e restante por medição"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CampoTextoCliente
+              label="Responsabilidade da Alpha"
+              value={cliente.responsabilidadesAlpha || ""}
+              onChange={(valor) => atualizarCampo("responsabilidadesAlpha", valor)}
+              placeholder={RESPONSABILIDADES_ALPHA_PADRAO.join("\n")}
+            />
+            <CampoTextoCliente
+              label="Responsabilidade do cliente"
+              value={cliente.responsabilidadesCliente || ""}
+              onChange={(valor) => atualizarCampo("responsabilidadesCliente", valor)}
+              placeholder={RESPONSABILIDADES_CLIENTE_PADRAO.join("\n")}
+            />
+          </div>
+        </div>
+
         <div className="pt-3 border-t border-stone-200 flex justify-end">
           <button
             type="button"
@@ -1862,7 +1933,7 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
   );
 }
 
-function CampoCliente({ label, value, onChange, icon, required, type = "text", inputClassName }) {
+function CampoCliente({ label, value, onChange, icon, required, type = "text", inputClassName, placeholder }) {
   return (
     <div>
       <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
@@ -1873,6 +1944,24 @@ function CampoCliente({ label, value, onChange, icon, required, type = "text", i
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={inputClassName || "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700"}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+function CampoTextoCliente({ label, value, onChange, placeholder }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
+        <FileText size={14} /> {label}
+      </label>
+      <textarea
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        rows={5}
+        className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700 resize-none"
+        placeholder={placeholder}
       />
     </div>
   );
