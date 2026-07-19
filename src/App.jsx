@@ -44,6 +44,7 @@ const CLIENTE_PADRAO = {
   documento: "",
   endereco: "",
   numeroProposta: "",
+  regimeMateriais: "alpha",
   prazoExecucao: "",
   condicoesPagamento: "",
   responsabilidadesAlpha: "",
@@ -84,6 +85,13 @@ const clienteDoProjeto = (projeto) => ({
 const clienteEstaCompleto = (cliente) =>
   Boolean(String(cliente?.nome || "").trim() && String(cliente?.local || "").trim());
 
+const materialPorContaCliente = (cliente) => cliente?.regimeMateriais === "cliente";
+const materialFaturamentoDireto = (cliente) => cliente?.regimeMateriais === "faturamentoDireto";
+const insumoEhMaterial = (tipo) => {
+  const t = String(tipo || "").toUpperCase().trim();
+  return t === "MAT" || t === "MATERIAL" || (!t.includes("MO") && !t.includes("MÃO") && !t.includes("MAO") && !t.includes("EQUIP"));
+};
+
 const nomeArquivoSeguro = (valor) =>
   String(valor || "Orcamento")
     .normalize("NFD")
@@ -100,18 +108,18 @@ const escapeHtml = (valor) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
-const itemVendaResumo = (item, bdiCalc, cpus, catalogMap) => {
+const itemVendaResumo = (item, bdiCalc, cpus, catalogMap, cliente = {}) => {
   const quantidade = num(item.quantidade);
   let total = 0;
 
   (item.insumos || []).forEach((ins) => {
-    const tipo = String(ins.tipo || "").toUpperCase().trim();
+    const isMaterial = insumoEhMaterial(ins.tipo);
+    if (materialPorContaCliente(cliente) && isMaterial) return;
+
     const custoBase = num(ins.coeficiente) * quantidade * insumoValorUnitario(ins, cpus, catalogMap);
     const isMat =
-      bdiCalc.faturamentoDireto &&
-      (tipo === "MAT" ||
-        tipo === "MATERIAL" ||
-        (!tipo.includes("MO") && !tipo.includes("MÃO") && !tipo.includes("MAO") && !tipo.includes("EQUIP")));
+      isMaterial &&
+      (bdiCalc.faturamentoDireto || materialFaturamentoDireto(cliente));
     total += custoBase * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
   });
 
@@ -122,13 +130,13 @@ const itemVendaResumo = (item, bdiCalc, cpus, catalogMap) => {
   };
 };
 
-const montarItensProposta = (etapas, bdiCalc, cpus, catalogMap) =>
+const montarItensProposta = (etapas, bdiCalc, cpus, catalogMap, cliente = {}) =>
   (etapas || []).map((etapa, idxEtapa) => {
     const itens = (etapa.itens || []).map((item, idxItem) => ({
       numero: `${idxEtapa + 1}.${idxItem + 1}`,
       descricao: item.servico || item.descricao || "",
       unidade: item.unidade || "",
-      ...itemVendaResumo(item, bdiCalc, cpus, catalogMap),
+      ...itemVendaResumo(item, bdiCalc, cpus, catalogMap, cliente),
     }));
 
     return {
@@ -253,8 +261,8 @@ const criarAbaVendaModelo = (grupos, fatorVenda = 1) => {
   return ws;
 };
 
-const exportarPropostaXlsx = ({ projeto, etapas, bdiCalc, cpus, catalogMap }) => {
-  const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap);
+const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
+  const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, cliente);
   const wb = XLSX.utils.book_new();
   const wsValores = criarAbaVendaModelo(grupos, bdiCalc?.FatorBdi || 1);
   XLSX.utils.book_append_sheet(wb, wsValores, "VENDA");
@@ -262,7 +270,7 @@ const exportarPropostaXlsx = ({ projeto, etapas, bdiCalc, cpus, catalogMap }) =>
 };
 
 const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
-  const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap);
+  const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, cliente);
   const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
   const hoje = new Date();
   const dataHoje = hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -278,6 +286,11 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     `Entrada de 40% (R$ ${fmt(totalGeral * 0.4)}) e o restante (R$ ${fmt(totalGeral * 0.6)}) conforme avanço dos serviços em medições.`;
   const responsabilidadesAlpha = listaTextoOuPadrao(cliente?.responsabilidadesAlpha, RESPONSABILIDADES_ALPHA_PADRAO);
   const responsabilidadesCliente = listaTextoOuPadrao(cliente?.responsabilidadesCliente, RESPONSABILIDADES_CLIENTE_PADRAO);
+  const descricaoRegimeMateriais = materialPorContaCliente(cliente)
+    ? "Material por conta do cliente. A proposta considera somente os serviços, mão de obra, equipamentos e demais custos não classificados como material."
+    : materialFaturamentoDireto(cliente)
+      ? "Materiais considerados com faturamento direto para o cliente, aplicando BDI específico de materiais quando configurado."
+      : "Materiais inclusos no fornecimento da ALPHA ENGENHARIA conforme composição do orçamento.";
 
   const linhasEscopo = grupos
     .map((grupo) => `
@@ -409,6 +422,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     <ul>${listaResponsabilidadesCliente}</ul>
     <h2>Valores:</h2>
     <p>Segue relação da mão de obra especializada para execução e acompanhamento dos serviços apresentados em visita técnica, totalizando o valor de <strong>R$ ${fmt(totalGeral)}</strong>.</p>
+    <p><strong>Condição dos materiais:</strong> ${escapeHtml(descricaoRegimeMateriais)}</p>
     <h2>PLANILHA DE MATERIAL</h2>
     <table class="valores">
       <thead><tr><th>ITEM</th><th>DESCRIÇÃO DOS SERVIÇOS</th><th>UNID.</th><th>QUANT.</th><th>VALOR UNIT.</th><th>VALOR TOTAL</th><th>TOTAL DO ITEM</th></tr></thead>
@@ -1386,6 +1400,7 @@ export default function App() {
                   onClick={() =>
                     exportarPropostaXlsx({
                       projeto: projetoAtivo,
+                      cliente: clienteAtivo,
                       etapas,
                       bdiCalc,
                       cpus,
@@ -1766,6 +1781,32 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
     setProjetos((prev) => prev.map((p) => (p.id === projeto.id ? { ...p, nome: valor } : p)));
   };
 
+  const atualizarRegimeMateriais = (valor) => {
+    atualizarCampo("regimeMateriais", valor);
+    setProjetos((prev) =>
+      prev.map((p) => {
+        if (p.id !== projeto.id) return p;
+        const bdiAtual = p.bdi || BDI_PADRAO;
+        return {
+          ...p,
+          bdi: {
+            ...bdiAtual,
+            faturamentoDireto: valor === "faturamentoDireto",
+            materiais: bdiAtual.materiais || {
+              admCentral: 0,
+              contabilidade: 0,
+              contingenciamento: 0,
+              custoFinanceiro: 0,
+              lucro: 0,
+              dasAnexoIV: 0,
+              art: 0,
+            },
+          },
+        };
+      })
+    );
+  };
+
   const campoBase =
     "w-full border rounded-lg px-3 py-2 text-sm outline-none bg-white focus:ring-1";
   const campoObrigatorio = (valor) =>
@@ -1876,7 +1917,7 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
           <h3 className="text-sm font-semibold text-stone-800 flex items-center gap-2">
             <FileText size={15} /> Dados da proposta
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <CampoCliente
               label="Número da proposta"
               value={cliente.numeroProposta || ""}
@@ -1884,6 +1925,20 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
               icon={<FileText size={14} />}
               placeholder="Ex.: PROP - 13/26"
             />
+            <div>
+              <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
+                <FileText size={14} /> Materiais na proposta
+              </label>
+              <select
+                value={cliente.regimeMateriais || "alpha"}
+                onChange={(e) => atualizarRegimeMateriais(e.target.value)}
+                className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700"
+              >
+                <option value="alpha">Material incluso pela Alpha</option>
+                <option value="cliente">Material por conta do cliente</option>
+                <option value="faturamentoDireto">Faturamento direto ao cliente</option>
+              </select>
+            </div>
             <CampoCliente
               label="Prazo para execução"
               value={cliente.prazoExecucao || ""}

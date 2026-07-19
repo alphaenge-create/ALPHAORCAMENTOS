@@ -40,6 +40,7 @@ export const createDefaultProject = () => {
       documento: "",
       endereco: "",
       numeroProposta: "",
+      regimeMateriais: "alpha",
       prazoExecucao: "",
       condicoesPagamento: "",
       responsabilidadesAlpha: "",
