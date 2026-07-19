@@ -3,7 +3,8 @@ import * as XLSX from "xlsx-js-style";
 import {
   Plus, Trash2, Pencil, X, Search, Upload, Download,
   ChevronDown, ChevronRight, Database, Calculator, Copy, Save, Percent, TrendingUp, RefreshCw,
-  Tags, AlertTriangle, Check, FolderKanban, HardHat, User, LogIn, MapPin, Phone, Mail, Building2, FileText
+  Tags, AlertTriangle, Check, FolderKanban, HardHat, User, LogIn, MapPin, Phone, Mail, Building2, FileText,
+  ArrowDown, ArrowUp, ArrowUpDown
 } from "lucide-react";
 import { FONTES_PADRAO, TIPOS, createDefaultProject, seedCpus } from "./data/defaultData";
 import {
@@ -2589,6 +2590,43 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
 function PrecosTab({ catalog, onUpsert, onRemove, onApplyToCpus, onApplyAllToCpus }) {
   const [editing, setEditing] = useState(null);
   const [query, setQuery] = useState("");
+  const [sortConfig, setSortConfig] = useState({ key: "descricao", direction: "asc" });
+
+  const hasPrice = (value) => value !== "" && value !== null && value !== undefined && Number.isFinite(num(value));
+
+  const requestSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === "asc" ? "desc" : "asc" };
+      }
+      return { key, direction: "asc" };
+    });
+  };
+
+  const SortIcon = ({ sortKey }) => {
+    if (sortConfig.key !== sortKey) return <ArrowUpDown size={11} className="text-stone-300" />;
+    return sortConfig.direction === "asc"
+      ? <ArrowUp size={11} className="text-stone-700" />
+      : <ArrowDown size={11} className="text-stone-700" />;
+  };
+
+  const SortableHeader = ({ sortKey, className = "", align = "left", children }) => {
+    const alignClass = align === "right" ? "justify-end text-right" : align === "center" ? "justify-center text-center" : "justify-start text-left";
+
+    return (
+      <th className={className}>
+        <button
+          type="button"
+          onClick={() => requestSort(sortKey)}
+          className={`inline-flex w-full items-center gap-1 ${alignClass} rounded px-1 py-1 font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-900`}
+          title="Clique para ordenar"
+        >
+          <span>{children}</span>
+          <SortIcon sortKey={sortKey} />
+        </button>
+      </th>
+    );
+  };
 
   const exportarXls = () => {
     const wb = XLSX.utils.book_new();
@@ -2604,14 +2642,40 @@ function PrecosTab({ catalog, onUpsert, onRemove, onApplyToCpus, onApplyAllToCpu
     XLSX.writeFile(wb, "banco_de_precos.xlsx");
   };
 
-  const filtered = catalog.filter((c) => {
+  const filtered = useMemo(() => {
     // Divide o texto digitado por espaços e remove itens vazios
     const searchTerms = norm(query).split(/\s+/).filter(Boolean);
-    const targetText = norm(c.descricao);
-    
-    // Verifica se TODAS as palavras buscadas estão presentes na descrição do insumo
-    return searchTerms.every((term) => targetText.includes(term));
-  });
+    const base = catalog.filter((c) => {
+      const targetText = norm(c.descricao);
+
+      // Verifica se TODAS as palavras buscadas estão presentes na descrição do insumo
+      return searchTerms.every((term) => targetText.includes(term));
+    });
+
+    const direction = sortConfig.direction === "asc" ? 1 : -1;
+    const compareText = (a, b, field) => String(a[field] || "").localeCompare(String(b[field] || ""), "pt-BR", { sensitivity: "base" });
+    const compareNumber = (a, b, field) => (num(a[field]) - num(b[field]));
+
+    return [...base].sort((a, b) => {
+      if (sortConfig.key === "valorUnitario") {
+        const aHasPrice = hasPrice(a.valorUnitario);
+        const bHasPrice = hasPrice(b.valorUnitario);
+        if (aHasPrice !== bHasPrice) return aHasPrice ? -1 : 1;
+        if (!aHasPrice && !bHasPrice) return compareText(a, b, "descricao");
+        return compareNumber(a, b, "valorUnitario") * direction;
+      }
+
+      if (sortConfig.key === "ocorrencias") {
+        const diff = compareNumber(a, b, "ocorrencias");
+        if (diff !== 0) return diff * direction;
+        return compareText(a, b, "descricao");
+      }
+
+      const diff = compareText(a, b, sortConfig.key);
+      if (diff !== 0) return diff * direction;
+      return compareText(a, b, "descricao");
+    });
+  }, [catalog, query, sortConfig]);
 
   return (
     <div className="bg-white border border-stone-200 rounded-lg p-4">
@@ -2637,11 +2701,11 @@ function PrecosTab({ catalog, onUpsert, onRemove, onApplyToCpus, onApplyAllToCpu
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="border-b border-stone-200 text-stone-400 font-normal">
-              <th className="py-2 pr-3 w-28">Tipo</th>
-              <th className="py-2 pr-3">Descrição Única do Insumo</th>
-              <th className="py-2 pr-3 w-20">Un.</th>
-              <th className="py-2 pr-3 w-32 text-right">Preço Padrão (R$)</th>
-              <th className="py-2 pr-3 w-28 text-center">Na Planilha Ativa</th>
+              <SortableHeader sortKey="tipo" className="py-2 pr-3 w-28">Tipo</SortableHeader>
+              <SortableHeader sortKey="descricao" className="py-2 pr-3">Descrição Única do Insumo</SortableHeader>
+              <SortableHeader sortKey="unidade" className="py-2 pr-3 w-20">Un.</SortableHeader>
+              <SortableHeader sortKey="valorUnitario" className="py-2 pr-3 w-32 text-right" align="right">Preço Padrão (R$)</SortableHeader>
+              <SortableHeader sortKey="ocorrencias" className="py-2 pr-3 w-28 text-center" align="center">Na Planilha Ativa</SortableHeader>
               <th className="py-2 w-24 text-center">Ações</th>
             </tr>
           </thead>
