@@ -346,20 +346,22 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
   <meta charset="utf-8" />
   <title>${escapeHtml(nomeArquivoSeguro(nomeProjeto))}_Proposta</title>
   <style>
-    @page { size: A4; margin: 15mm 14mm 14mm; }
+    @page { size: A4; margin: 32.5mm 12.5mm 15mm 12.5mm; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11px; }
-    .page { min-height: 268mm; page-break-after: always; position: relative; padding-bottom: 20mm; }
+    body { margin: 0; font-family: Calibri, "Aptos", Arial, sans-serif; color: #111; font-size: 11pt; }
+    .page { min-height: 249mm; page-break-after: always; position: relative; padding-bottom: 25mm; }
     .page:last-child { page-break-after: auto; }
-    header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; }
-    .prop { font-weight: 700; font-size: 12px; }
-    .pagina-topo { color: transparent; font-size: 10px; }
-    h1 { text-align: center; font-size: 15px; margin: 26px 0 24px; }
-    h2 { font-size: 12px; margin: 14px 0 8px; }
-    p { margin: 6px 0; line-height: 1.45; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    header { display: flex; justify-content: flex-end; align-items: flex-start; margin-bottom: 22mm; }
+    .prop { font-weight: 700; font-size: 11pt; text-align: right; }
+    .pagina-topo { display: none; }
+    h1 { text-align: center; font-size: 16pt; line-height: 1.15; margin: 0 0 17mm; font-weight: 700; }
+    h2 { font-size: 11pt; line-height: 1.15; margin: 10px 0 6px; font-weight: 700; }
+    p { margin: 0 0 6px; line-height: 1.5; text-align: justify; }
+    .data { text-align: right; line-height: 1.15; margin-bottom: 10px; }
+    .ref { font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9pt; line-height: 1.15; margin-top: 4px; }
     th { background: #d8d8d8; font-weight: 700; text-align: left; }
-    th, td { padding: 4px 5px; vertical-align: top; }
+    th, td { padding: 3px 4px; vertical-align: middle; }
     tbody tr { page-break-inside: avoid; }
     .escopo th:nth-child(1), .escopo td:nth-child(1) { width: 9%; }
     .escopo th:nth-child(2), .escopo td:nth-child(2) { width: 67%; }
@@ -373,19 +375,19 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     .valores th:nth-child(6), .valores td:nth-child(6),
     .valores th:nth-child(7), .valores td:nth-child(7) { width: 11%; text-align: right; }
     .grupo td { background: #e2efd9; font-weight: 700; }
-    .total td { background: #e2efd9; font-weight: 700; font-size: 12px; }
+    .total td { background: #e2efd9; font-weight: 700; font-size: 10pt; }
     .total td:first-child { text-align: center; }
-    ul { margin: 6px 0 14px 18px; padding: 0; }
-    li { margin: 5px 0; }
+    ul { margin: 0 0 12px 18px; padding: 0; line-height: 1.15; }
+    li { margin: 0 0 4px; text-align: justify; }
     .assinatura { margin-top: 48px; width: 260px; border-top: 1px solid #111; text-align: center; padding-top: 6px; }
-    .footer { position: absolute; bottom: 0; left: 0; right: 0; font-size: 10px; color: #111; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
-    .footer strong { display: block; font-weight: 700; margin-bottom: 2px; }
-    .footer .endereco { line-height: 1.35; }
+    .footer { position: absolute; bottom: 0; left: 0; right: 0; font-size: 11pt; color: #111; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+    .footer strong { display: block; font-weight: 700; margin-bottom: 0; }
+    .footer .endereco { line-height: 1.15; }
     .footer .pagina { white-space: nowrap; }
     @media screen {
       body { background: #eee; padding: 20px; }
-      .page { background: white; width: 210mm; margin: 0 auto 20px; padding: 16mm 14mm 14mm; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
-      .footer { left: 14mm; right: 14mm; bottom: 10mm; }
+      .page { background: white; width: 210mm; margin: 0 auto 20px; padding: 32.5mm 12.5mm 15mm; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+      .footer { left: 12.5mm; right: 12.5mm; bottom: 12.5mm; }
     }
   </style>
 </head>
@@ -396,9 +398,9 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
       <div class="pagina-topo">Página 1 de 3</div>
     </header>
     <h1>PROPOSTA DE PRESTAÇÃO DE SERVIÇOS</h1>
-    <p>Belo Horizonte, ${escapeHtml(dataHoje)}</p>
+    <p class="data">Belo Horizonte ${escapeHtml(dataHoje)}</p>
     <p>Aos cuidados de ${escapeHtml(nomeCliente)}${contato ? ` - ${escapeHtml(contato)}` : ""}.</p>
-    <p><strong>Ref.</strong> ${escapeHtml(nomeProjeto)}</p>
+    <p class="ref">Ref. ${escapeHtml(nomeProjeto)}</p>
     <p><strong>Endereço da Obra:</strong> ${escapeHtml(localObra)}</p>
     <h2>Escopo do Serviço:</h2>
     <table class="escopo">
