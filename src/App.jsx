@@ -462,7 +462,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
 </body>
 </html>`;
 
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  const printWindow = window.open("", "_blank");
   if (!printWindow) {
     alert("Não foi possível abrir a janela da proposta. Verifique se o navegador bloqueou pop-ups.");
     return;
