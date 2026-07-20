@@ -346,17 +346,17 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
   <meta charset="utf-8" />
   <title>${escapeHtml(nomeArquivoSeguro(nomeProjeto))}_Proposta</title>
   <style>
-    @page { size: A4; margin: 32.5mm 12.5mm 15mm 12.5mm; }
+    @page { size: A4; margin: 18mm 12.5mm 15mm 12.5mm; }
     * { box-sizing: border-box; }
     :root { --alpha: #7f985c; --alpha-dark: #4f6339; --alpha-soft: #e7efd9; --line: #c6d4b1; }
     body { margin: 0; font-family: Calibri, "Aptos", Arial, sans-serif; color: #111; font-size: 11pt; }
-    .page { min-height: 249mm; page-break-after: always; position: relative; display: flex; flex-direction: column; }
+    .page { min-height: 263.5mm; page-break-after: always; position: relative; display: flex; flex-direction: column; }
     .page:last-child { page-break-after: auto; }
-    header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 19mm; border-bottom: 1.2pt solid var(--alpha); padding-bottom: 5mm; }
-    .logo { width: 24mm; height: 24mm; object-fit: contain; display: block; }
+    header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10mm; border-bottom: 1pt solid var(--alpha); padding-bottom: 3mm; }
+    .logo { width: 18mm; height: 18mm; object-fit: contain; display: block; }
     .prop { font-weight: 700; font-size: 11pt; text-align: right; color: var(--alpha-dark); padding-top: 2mm; }
     .pagina-topo { display: none; }
-    h1 { text-align: center; font-size: 16pt; line-height: 1.15; margin: 0 0 17mm; font-weight: 700; color: var(--alpha-dark); }
+    h1 { text-align: center; font-size: 16pt; line-height: 1.15; margin: 0 0 12mm; font-weight: 700; color: var(--alpha-dark); }
     h2 { font-size: 11pt; line-height: 1.15; margin: 10px 0 6px; font-weight: 700; color: var(--alpha-dark); }
     p { margin: 0 0 6px; line-height: 1.5; text-align: justify; }
     .data { text-align: right; line-height: 1.15; margin-bottom: 10px; }
@@ -388,7 +388,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     .footer .pagina { white-space: nowrap; color: var(--alpha-dark); font-weight: 700; }
     @media screen {
       body { background: #eee; padding: 20px; }
-      .page { background: white; width: 210mm; margin: 0 auto 20px; padding: 32.5mm 12.5mm 15mm; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+      .page { background: white; width: 210mm; margin: 0 auto 20px; padding: 18mm 12.5mm 15mm; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
     }
   </style>
 </head>
