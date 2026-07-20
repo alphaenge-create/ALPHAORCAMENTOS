@@ -348,20 +348,22 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
   <style>
     @page { size: A4; margin: 32.5mm 12.5mm 15mm 12.5mm; }
     * { box-sizing: border-box; }
+    :root { --alpha: #7f985c; --alpha-dark: #4f6339; --alpha-soft: #e7efd9; --line: #c6d4b1; }
     body { margin: 0; font-family: Calibri, "Aptos", Arial, sans-serif; color: #111; font-size: 11pt; }
     .page { min-height: 249mm; page-break-after: always; position: relative; padding-bottom: 25mm; }
     .page:last-child { page-break-after: auto; }
-    header { display: flex; justify-content: flex-end; align-items: flex-start; margin-bottom: 22mm; }
-    .prop { font-weight: 700; font-size: 11pt; text-align: right; }
+    header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 19mm; border-bottom: 1.2pt solid var(--alpha); padding-bottom: 5mm; }
+    .logo { width: 24mm; height: 24mm; object-fit: contain; display: block; }
+    .prop { font-weight: 700; font-size: 11pt; text-align: right; color: var(--alpha-dark); padding-top: 2mm; }
     .pagina-topo { display: none; }
-    h1 { text-align: center; font-size: 16pt; line-height: 1.15; margin: 0 0 17mm; font-weight: 700; }
-    h2 { font-size: 11pt; line-height: 1.15; margin: 10px 0 6px; font-weight: 700; }
+    h1 { text-align: center; font-size: 16pt; line-height: 1.15; margin: 0 0 17mm; font-weight: 700; color: var(--alpha-dark); }
+    h2 { font-size: 11pt; line-height: 1.15; margin: 10px 0 6px; font-weight: 700; color: var(--alpha-dark); }
     p { margin: 0 0 6px; line-height: 1.5; text-align: justify; }
     .data { text-align: right; line-height: 1.15; margin-bottom: 10px; }
     .ref { font-weight: 700; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 9pt; line-height: 1.15; margin-top: 4px; }
-    th { background: #d8d8d8; font-weight: 700; text-align: left; }
-    th, td { padding: 3px 4px; vertical-align: middle; }
+    th { background: var(--alpha); color: #fff; font-weight: 700; text-align: left; }
+    th, td { padding: 3px 4px; vertical-align: middle; border-bottom: 0.4pt solid #ececec; }
     tbody tr { page-break-inside: avoid; }
     .escopo th:nth-child(1), .escopo td:nth-child(1) { width: 9%; }
     .escopo th:nth-child(2), .escopo td:nth-child(2) { width: 67%; }
@@ -374,16 +376,16 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     .valores th:nth-child(5), .valores td:nth-child(5),
     .valores th:nth-child(6), .valores td:nth-child(6),
     .valores th:nth-child(7), .valores td:nth-child(7) { width: 11%; text-align: right; }
-    .grupo td { background: #e2efd9; font-weight: 700; }
-    .total td { background: #e2efd9; font-weight: 700; font-size: 10pt; }
+    .grupo td { background: var(--alpha-soft); color: var(--alpha-dark); font-weight: 700; border-bottom: 0.6pt solid var(--line); }
+    .total td { background: var(--alpha); color: #fff; font-weight: 700; font-size: 10pt; }
     .total td:first-child { text-align: center; }
     ul { margin: 0 0 12px 18px; padding: 0; line-height: 1.15; }
     li { margin: 0 0 4px; text-align: justify; }
-    .assinatura { margin-top: 48px; width: 260px; border-top: 1px solid #111; text-align: center; padding-top: 6px; }
+    .assinatura { margin-top: 48px; width: 260px; border-top: 1px solid var(--alpha-dark); text-align: center; padding-top: 6px; color: var(--alpha-dark); font-weight: 700; }
     .footer { position: absolute; bottom: 0; left: 0; right: 0; font-size: 11pt; color: #111; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
-    .footer strong { display: block; font-weight: 700; margin-bottom: 0; }
+    .footer strong { display: block; font-weight: 700; margin-bottom: 0; color: var(--alpha-dark); }
     .footer .endereco { line-height: 1.15; }
-    .footer .pagina { white-space: nowrap; }
+    .footer .pagina { white-space: nowrap; color: var(--alpha-dark); font-weight: 700; }
     @media screen {
       body { background: #eee; padding: 20px; }
       .page { background: white; width: 210mm; margin: 0 auto 20px; padding: 32.5mm 12.5mm 15mm; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
@@ -394,6 +396,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
 <body>
   <section class="page">
     <header>
+      <img class="logo" src="${escapeHtml(alphaLogo)}" alt="Alpha Engenharia" />
       <div class="prop">${escapeHtml(numeroProposta)}</div>
       <div class="pagina-topo">Página 1 de 3</div>
     </header>
@@ -415,6 +418,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
 
   <section class="page">
     <header>
+      <img class="logo" src="${escapeHtml(alphaLogo)}" alt="Alpha Engenharia" />
       <div class="prop">${escapeHtml(numeroProposta)}</div>
       <div class="pagina-topo">Página 2 de 3</div>
     </header>
@@ -441,6 +445,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
 
   <section class="page">
     <header>
+      <img class="logo" src="${escapeHtml(alphaLogo)}" alt="Alpha Engenharia" />
       <div class="prop">${escapeHtml(numeroProposta)}</div>
       <div class="pagina-topo">Página 3 de 3</div>
     </header>
@@ -458,7 +463,12 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
   </section>
   <script>
     window.onload = () => {
-      setTimeout(() => window.print(), 350);
+      const images = Array.from(document.images || []);
+      const loaded = images.map((img) => img.complete ? Promise.resolve() : new Promise((resolve) => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      }));
+      Promise.all(loaded).finally(() => setTimeout(() => window.print(), 450));
     };
   </script>
 </body>
