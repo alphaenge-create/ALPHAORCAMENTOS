@@ -350,7 +350,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     * { box-sizing: border-box; }
     :root { --alpha: #7f985c; --alpha-dark: #4f6339; --alpha-soft: #e7efd9; --line: #c6d4b1; }
     body { margin: 0; font-family: Calibri, "Aptos", Arial, sans-serif; color: #111; font-size: 11pt; }
-    .page { min-height: 249mm; page-break-after: always; position: relative; padding-bottom: 25mm; }
+    .page { min-height: 249mm; page-break-after: always; position: relative; display: flex; flex-direction: column; }
     .page:last-child { page-break-after: auto; }
     header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 19mm; border-bottom: 1.2pt solid var(--alpha); padding-bottom: 5mm; }
     .logo { width: 24mm; height: 24mm; object-fit: contain; display: block; }
@@ -382,14 +382,13 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     ul { margin: 0 0 12px 18px; padding: 0; line-height: 1.15; }
     li { margin: 0 0 4px; text-align: justify; }
     .assinatura { margin-top: 48px; width: 260px; border-top: 1px solid var(--alpha-dark); text-align: center; padding-top: 6px; color: var(--alpha-dark); font-weight: 700; }
-    .footer { position: absolute; bottom: 0; left: 0; right: 0; font-size: 11pt; color: #111; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+    .footer { margin-top: auto; padding-top: 10mm; font-size: 11pt; color: #111; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; page-break-inside: avoid; break-inside: avoid; }
     .footer strong { display: block; font-weight: 700; margin-bottom: 0; color: var(--alpha-dark); }
     .footer .endereco { line-height: 1.15; }
     .footer .pagina { white-space: nowrap; color: var(--alpha-dark); font-weight: 700; }
     @media screen {
       body { background: #eee; padding: 20px; }
       .page { background: white; width: 210mm; margin: 0 auto 20px; padding: 32.5mm 12.5mm 15mm; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
-      .footer { left: 12.5mm; right: 12.5mm; bottom: 12.5mm; }
     }
   </style>
 </head>
