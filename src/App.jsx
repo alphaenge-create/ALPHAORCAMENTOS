@@ -16,7 +16,12 @@ import {
   precoKey,
 } from "./utils/calculos";
 import { fmt, norm, num, uid } from "./utils/format";
-import { loadGoogleDriveSnapshot, requestGoogleDriveAccess, saveGoogleDriveSnapshot } from "./services/googleDriveStore";
+import {
+  deleteGoogleDriveProject,
+  loadGoogleDriveSnapshot,
+  requestGoogleDriveAccess,
+  saveGoogleDriveSnapshot,
+} from "./services/googleDriveStore";
 import {
   loadLocalSnapshot,
   loadOrcamentoData,
@@ -545,14 +550,16 @@ export default function App() {
   const [cpus, setCpusState] = useState([]);
   const [projetos, setProjetos] = useState([]);
   const [projetoAtivoId, setProjetoAtivoId] = useState("");
-  const [precos, setPrecos] = useState([]);
+  const [precos, setPrecosState] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [driveConnected, setDriveConnected] = useState(false);
   const fileInputRef = useRef(null);
   const cpuHashesRef = useRef({});
+  const projectHashesRef = useRef({});
   const [cpusDirty, setCpusDirty] = useState(false);
+  const [precosDirty, setPrecosDirty] = useState(false);
   // Novos estados para controle de recolhimento/expansão das camadas
   const [etapasExpandidas, setEtapasExpandidas] = useState({});
   const [cpusExpandidas, setCpusExpandidas] = useState({});
@@ -562,13 +569,20 @@ export default function App() {
     setCpusState(nextCpus);
   };
 
+  const setPrecos = (nextPrecos) => {
+    setPrecosDirty(true);
+    setPrecosState(nextPrecos);
+  };
+
   const aplicarDadosCarregados = (data) => {
     if (data.empty) {
       const defaultProj = createDefaultProject();
       setCpusState(seedCpus());
       setCpusDirty(true);
       setProjetos([defaultProj]);
-      setPrecos([]);
+      projectHashesRef.current = {};
+      setPrecosState([]);
+      setPrecosDirty(true);
       setProjetoAtivoId(defaultProj.id);
       setStatus("Nenhum dado salvo no Firebase. Projeto inicial criado localmente.");
       return;
@@ -578,7 +592,11 @@ export default function App() {
     cpuHashesRef.current = data.cpuHashes || {};
     setCpusDirty(false);
     setProjetos(data.projetos || []);
-    setPrecos(data.precos || []);
+    projectHashesRef.current = Object.fromEntries(
+      (data.projetos || []).map((project) => [project.id, JSON.stringify(project)])
+    );
+    setPrecosState(data.precos || []);
+    setPrecosDirty(false);
     setProjetoAtivoId(data.projetoAtivoId || "");
     setStatus("Dados carregados do Firebase.");
   };
@@ -624,15 +642,34 @@ export default function App() {
     try {
       await saveLocalSnapshot({ cpus, projetos, precos, projetoAtivoId });
       setStatus("Backup local salvo. Sincronizando Google Drive...");
-      await saveGoogleDriveSnapshot({
-        cpus,
-        projetos,
-        precos,
-        projetoAtivoId,
+      const changedProjectIds = projetos
+        .filter((project) => projectHashesRef.current[project.id] !== JSON.stringify(project))
+        .map((project) => project.id);
+      const projectIdsToSave = changedProjectIds.length
+        ? changedProjectIds
+        : projetoAtivoId
+          ? [projetoAtivoId]
+          : [];
+      await saveGoogleDriveSnapshot(
+        {
+          cpus,
+          projetos,
+          precos,
+          projetoAtivoId,
+        },
+        {
+          includeBase: cpusDirty || precosDirty,
+          projectIds: projectIdsToSave,
+        }
+      );
+      projectIdsToSave.forEach((projectId) => {
+        const project = projetos.find((item) => item.id === projectId);
+        if (project) projectHashesRef.current[projectId] = JSON.stringify(project);
       });
       setDriveConnected(true);
       setCpusDirty(false);
-      setStatus("Salvo localmente e no Google Drive.");
+      setPrecosDirty(false);
+      setStatus("Orçamento salvo localmente e no Google Drive.");
     } catch (e) {
       console.error("Erro ao salvar no Google Drive:", e);
       setStatus("Salvo localmente. Falha ao sincronizar Google Drive: " + (e?.message || e));
@@ -740,6 +777,39 @@ export default function App() {
   const removePreco = (descricao) => {
     const key = precoKey(descricao);
     setPrecos((prev) => prev.filter((p) => precoKey(p.descricao) !== key));
+  };
+
+  const removerProjeto = async (project) => {
+    if (projetos.length <= 1) {
+      alert("Não é possível apagar todos os orçamentos.");
+      return;
+    }
+    if (!window.confirm(`Tem certeza que deseja apagar o orçamento "${project.nome}"?`)) return;
+
+    setBusy(true);
+    setStatus(`Excluindo o orçamento "${project.nome}"...`);
+    try {
+      await deleteGoogleDriveProject(project.id);
+      const nextProjects = projetos.filter((item) => item.id !== project.id);
+      const nextActiveId = project.id === projetoAtivoId
+        ? nextProjects[0]?.id || ""
+        : projetoAtivoId;
+      setProjetos(nextProjects);
+      setProjetoAtivoId(nextActiveId);
+      delete projectHashesRef.current[project.id];
+      await saveLocalSnapshot({
+        cpus,
+        projetos: nextProjects,
+        precos,
+        projetoAtivoId: nextActiveId,
+      });
+      setStatus("Orçamento excluído do Google Drive.");
+    } catch (error) {
+      setStatus("Falha ao excluir o orçamento: " + (error?.message || error));
+    } finally {
+      setBusy(false);
+      setTimeout(() => setStatus(""), 8000);
+    }
   };
 
   // Melhoria Crítica solicitada: Altera APENAS os insumos associados Ã  aba CUSTOS do projeto ativo
@@ -1078,12 +1148,9 @@ export default function App() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (projetos.length <= 1) return alert("Não é possível apagar todos os orçamentos.");
-                          if (confirm(`Tem certeza que deseja apagar o orçamento "${p.nome}"?`)) {
-                            setProjetos((prev) => prev.filter((item) => item.id !== p.id));
-                            if (isActive) setProjetoAtivoId(projetos.find((item) => item.id !== p.id)?.id || "");
-                          }
+                          removerProjeto(p);
                         }}
+                        disabled={busy}
                         className="text-stone-400 hover:text-red-600 p-1 rounded-md transition-colors"
                         title="Excluir Orçamento"
                       >

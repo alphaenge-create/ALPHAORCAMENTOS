@@ -1,6 +1,10 @@
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DRIVE_FOLDER_NAME = "AlphaOrcamentos";
 const DRIVE_BACKUP_NAME = "alphaorc-backup.json.gz";
+const DRIVE_BASE_NAME = "alphaorc-base.json.gz";
+const DRIVE_PROJECT_PREFIX = "alphaorc-projeto-";
+const DRIVE_PROJECT_SUFFIX = ".json.gz";
+const DRIVE_STORAGE_VERSION = 2;
 const CLIENT_ID_KEY = "alphaorc-google-client-id";
 const DEFAULT_GOOGLE_CLIENT_ID = "376035181065-3gdnkppglnag1s1u3ue7kkflfe2iv5ln.apps.googleusercontent.com";
 
@@ -115,6 +119,7 @@ const driveSearch = async (q, fields = "files(id,name,modifiedTime)") => {
     q,
     fields,
     spaces: "drive",
+    pageSize: "1000",
   });
   const response = await driveFetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
   const data = await response.json();
@@ -148,6 +153,27 @@ const findBackupFile = async (folderId) => {
     "files(id,name,modifiedTime,size)"
   );
   return files[0] || null;
+};
+
+const findNamedFile = async (folderId, name) => {
+  const files = await driveSearch(
+    `name='${escapeDriveQuery(name)}' and '${folderId}' in parents and trashed=false`,
+    "files(id,name,modifiedTime,size)"
+  );
+  return files[0] || null;
+};
+
+const projectFileName = (projectId) =>
+  `${DRIVE_PROJECT_PREFIX}${String(projectId || "").replace(/[^a-zA-Z0-9_-]/g, "_")}${DRIVE_PROJECT_SUFFIX}`;
+
+const listProjectFiles = async (folderId) => {
+  const files = await driveSearch(
+    `name contains '${escapeDriveQuery(DRIVE_PROJECT_PREFIX)}' and '${folderId}' in parents and trashed=false`,
+    "files(id,name,modifiedTime,size)"
+  );
+  return files.filter(
+    (file) => file.name.startsWith(DRIVE_PROJECT_PREFIX) && file.name.endsWith(DRIVE_PROJECT_SUFFIX)
+  );
 };
 
 const gzipJson = async (data) => {
@@ -190,16 +216,14 @@ const createMultipartBody = (metadata, mediaBlob) => {
   };
 };
 
-export async function saveGoogleDriveSnapshot(data) {
-  await requestGoogleDriveAccess();
-  const folder = await ensureDriveFolder();
-  const existing = await findBackupFile(folder.id);
-  const blob = await gzipJson({
-    ...data,
-    savedAt: new Date().toISOString(),
-    storage: "google-drive",
-  });
+const readDriveJsonFile = async (fileId) => {
+  const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+  return await readBackupBlob(await response.blob());
+};
 
+const upsertDriveJsonFile = async (folderId, name, data, knownFile = null) => {
+  const existing = knownFile || await findNamedFile(folderId, name);
+  const blob = await gzipJson(data);
   if (existing) {
     await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media`, {
       method: "PATCH",
@@ -211,8 +235,8 @@ export async function saveGoogleDriveSnapshot(data) {
 
   const { boundary, body } = createMultipartBody(
     {
-      name: DRIVE_BACKUP_NAME,
-      parents: [folder.id],
+      name,
+      parents: [folderId],
       mimeType: "application/gzip",
     },
     blob
@@ -224,15 +248,140 @@ export async function saveGoogleDriveSnapshot(data) {
   });
   const created = await response.json();
   return { fileId: created.id, updated: false };
+};
+
+const saveSeparatedSnapshot = async (
+  folder,
+  data,
+  { includeBase = false, projectIds = [], migrateAll = false } = {}
+) => {
+  const baseFile = await findNamedFile(folder.id, DRIVE_BASE_NAME);
+  const firstSeparatedSave = !baseFile;
+  const idsToSave = new Set(projectIds || []);
+  const projectsToSave = firstSeparatedSave || migrateAll
+    ? (data.projetos || [])
+    : (data.projetos || []).filter((project) => idsToSave.has(project.id));
+  const savedAt = new Date().toISOString();
+
+  for (const project of projectsToSave) {
+    await upsertDriveJsonFile(folder.id, projectFileName(project.id), {
+      storageVersion: DRIVE_STORAGE_VERSION,
+      storage: "google-drive-separated",
+      savedAt,
+      projectId: project.id,
+      projectOrder: (data.projetos || []).findIndex((item) => item.id === project.id),
+      projeto: project,
+    });
+  }
+
+  if (firstSeparatedSave || includeBase || migrateAll) {
+    await upsertDriveJsonFile(
+      folder.id,
+      DRIVE_BASE_NAME,
+      {
+        storageVersion: DRIVE_STORAGE_VERSION,
+        storage: "google-drive-separated",
+        savedAt,
+        projetoAtivoId: data.projetoAtivoId || "",
+        cpus: data.cpus || [],
+        precos: data.precos || [],
+      },
+      baseFile
+    );
+  }
+
+  return {
+    storageVersion: DRIVE_STORAGE_VERSION,
+    projetosSalvos: projectsToSave.length,
+    baseSalva: firstSeparatedSave || includeBase || migrateAll,
+  };
+};
+
+export async function saveGoogleDriveSnapshot(data, options = {}) {
+  await requestGoogleDriveAccess();
+  const folder = await ensureDriveFolder();
+  return await saveSeparatedSnapshot(folder, data, options);
 }
 
 export async function loadGoogleDriveSnapshot() {
   await requestGoogleDriveAccess();
   const folder = await ensureDriveFolder();
-  const file = await findBackupFile(folder.id);
-  if (!file) return null;
+  const baseFile = await findNamedFile(folder.id, DRIVE_BASE_NAME);
 
-  const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
-  const blob = await response.blob();
-  return await readBackupBlob(blob);
+  if (baseFile) {
+    const [base, projectFiles] = await Promise.all([
+      readDriveJsonFile(baseFile.id),
+      listProjectFiles(folder.id),
+    ]);
+    const projectRecords = (
+      await Promise.all(
+        projectFiles.map(async (file) => {
+          try {
+            const data = await readDriveJsonFile(file.id);
+            return data?.projeto
+              ? {
+                  project: data.projeto,
+                  order: Number.isFinite(Number(data.projectOrder)) ? Number(data.projectOrder) : Number.MAX_SAFE_INTEGER,
+                  modifiedTime: file.modifiedTime || "",
+                }
+              : null;
+          } catch (error) {
+            console.warn(`Não foi possível carregar ${file.name}:`, error);
+            return null;
+          }
+        })
+      )
+    ).filter(Boolean);
+    const projectsById = new Map();
+    projectRecords
+      .sort((a, b) => String(b.modifiedTime).localeCompare(String(a.modifiedTime)))
+      .forEach((record) => {
+        if (!projectsById.has(record.project.id)) projectsById.set(record.project.id, record);
+      });
+    const projetos = Array.from(projectsById.values())
+      .sort((a, b) => a.order - b.order)
+      .map((record) => record.project);
+
+    return {
+      empty: false,
+      storageVersion: DRIVE_STORAGE_VERSION,
+      storage: "google-drive-separated",
+      cpus: base.cpus || [],
+      precos: base.precos || [],
+      projetos,
+      projetoAtivoId:
+        projetos.some((project) => project.id === base.projetoAtivoId)
+          ? base.projetoAtivoId
+          : projetos[0]?.id || "",
+    };
+  }
+
+  const legacyFile = await findBackupFile(folder.id);
+  if (!legacyFile) return null;
+
+  const legacyData = await readDriveJsonFile(legacyFile.id);
+  await saveSeparatedSnapshot(folder, legacyData, {
+    includeBase: true,
+    migrateAll: true,
+    projectIds: (legacyData.projetos || []).map((project) => project.id),
+  });
+
+  return {
+    ...legacyData,
+    empty: false,
+    storageVersion: DRIVE_STORAGE_VERSION,
+    storage: "google-drive-separated",
+  };
+}
+
+export async function deleteGoogleDriveProject(projectId) {
+  await requestGoogleDriveAccess();
+  const folder = await ensureDriveFolder();
+  const file = await findNamedFile(folder.id, projectFileName(projectId));
+  if (!file) return { deleted: false };
+
+  await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
+    method: "DELETE",
+  });
+  return { deleted: true };
 }
