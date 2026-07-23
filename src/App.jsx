@@ -647,7 +647,6 @@ export default function App() {
     setStatus("Conectando Google Drive...");
     try {
       await requestGoogleDriveAccess();
-      setDriveConnected(true);
       setStatus("Google Drive conectado. Carregando orçamentos...");
       const driveData = await loadGoogleDriveSnapshot();
       if (driveData) {
@@ -657,6 +656,7 @@ export default function App() {
       } else {
         setStatus("Drive conectado. Ainda não há orçamentos salvos nesta conta.");
       }
+      setDriveConnected(true);
     } catch (e) {
       setStatus("Falha ao conectar ou carregar o Drive: " + (e?.message || e));
     } finally {
@@ -836,6 +836,42 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
+      {!driveConnected && (
+        <div
+          className="fixed inset-0 z-[100] bg-stone-950/55 backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="drive-required-title"
+        >
+          <div className="w-full max-w-sm bg-white border border-stone-200 rounded-lg shadow-2xl p-6 text-center">
+            <img
+              src={alphaLogo}
+              alt="Alpha Engenharia"
+              className="w-20 h-20 object-cover rounded-sm mx-auto mb-4"
+            />
+            <h2 id="drive-required-title" className="text-lg font-semibold text-stone-900">
+              Conexão com o Google Drive
+            </h2>
+            <p className="mt-2 text-sm text-stone-500">
+              Conecte a conta Google da equipe para carregar os orçamentos e acessar o aplicativo.
+            </p>
+            <button
+              type="button"
+              onClick={conectarGoogleDrive}
+              disabled={busy}
+              className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {busy ? <RefreshCw size={16} className="animate-spin" /> : <LogIn size={16} />}
+              {busy ? "Conectando e carregando..." : "Conectar ao Google Drive"}
+            </button>
+            {status && (
+              <p className={`mt-3 text-xs ${status.startsWith("Falha") ? "text-red-600" : "text-stone-500"}`}>
+                {status}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="max-w-[1500px] mx-auto px-4 py-6 lg:flex lg:items-start lg:gap-5">
         <aside className="lg:sticky lg:top-4 lg:w-64 lg:shrink-0 mb-5 lg:mb-0">
