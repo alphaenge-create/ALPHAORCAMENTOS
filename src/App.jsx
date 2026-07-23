@@ -933,15 +933,6 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={() => carregarDados({ usarDrive: true })}
-              disabled={busy}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-300 rounded-lg font-medium bg-white hover:bg-stone-50 text-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Carregar dados salvos no Google Drive"
-            >
-              <RefreshCw size={13} className={busy ? "animate-spin" : ""} /> Carregar
-            </button>
-            <button
-              type="button"
               onClick={salvarDados}
               disabled={busy || !loaded}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-900 rounded-lg font-medium bg-stone-900 hover:bg-stone-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
