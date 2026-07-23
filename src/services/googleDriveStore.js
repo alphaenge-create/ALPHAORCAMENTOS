@@ -5,6 +5,7 @@ const DRIVE_BASE_NAME = "alphaorc-base.json.gz";
 const DRIVE_PROJECT_PREFIX = "alphaorc-projeto-";
 const DRIVE_PROJECT_SUFFIX = ".json.gz";
 const DRIVE_STORAGE_VERSION = 2;
+const DRIVE_REQUEST_TIMEOUT_MS = 60_000;
 const CLIENT_ID_KEY = "alphaorc-google-client-id";
 const DEFAULT_GOOGLE_CLIENT_ID = "376035181065-3gdnkppglnag1s1u3ue7kkflfe2iv5ln.apps.googleusercontent.com";
 
@@ -89,13 +90,27 @@ export async function requestGoogleDriveAccess() {
 
 const driveFetch = async (url, options = {}) => {
   if (!accessToken) await requestGoogleDriveAccess();
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DRIVE_REQUEST_TIMEOUT_MS);
+  let response;
+
+  try {
+    response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("O Google Drive não respondeu em 60 segundos.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (response.status === 401) {
     accessToken = "";

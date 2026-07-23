@@ -90,6 +90,11 @@ const clienteDoProjeto = (projeto) => ({
 const clienteEstaCompleto = (cliente) =>
   Boolean(String(cliente?.nome || "").trim() && String(cliente?.local || "").trim());
 
+const aguardar = (tempoMs) => new Promise((resolve) => setTimeout(resolve, tempoMs));
+
+const intervaloNovaTentativa = (tentativa) =>
+  Math.min(30000, 2000 * (2 ** Math.min(Math.max(tentativa - 1, 0), 4)));
+
 const prepararBancosDePrecosPorProjeto = (projetos = [], precosLegados = []) => {
   const precosAtuais = Array.isArray(precosLegados) ? precosLegados : [];
   const projetosSemBanco = projetos.filter(
@@ -621,11 +626,14 @@ export default function App() {
   const cpuHashesRef = useRef({});
   const projectHashesRef = useRef({});
   const legacyPrecosRef = useRef([]);
+  const dadosAtuaisRef = useRef({ cpus: [], projetos: [], projetoAtivoId: "" });
   const [cpusDirty, setCpusDirty] = useState(false);
   const [abaPendenteAposSalvarCpus, setAbaPendenteAposSalvarCpus] = useState(null);
   // Novos estados para controle de recolhimento/expansão das camadas
   const [etapasExpandidas, setEtapasExpandidas] = useState({});
   const [cpusExpandidas, setCpusExpandidas] = useState({});
+
+  dadosAtuaisRef.current = { cpus, projetos, projetoAtivoId };
 
   const setCpus = (nextCpus) => {
     setCpusDirty(true);
@@ -702,41 +710,71 @@ export default function App() {
     }
   };
 
+  const executarSalvamentoAteConseguir = async (descricao, operacao) => {
+    let tentativa = 0;
+    while (true) {
+      tentativa += 1;
+      if (tentativa > 1) {
+        setStatus(`Tentativa automática ${tentativa}: salvando ${descricao}...`);
+      }
+      try {
+        return await operacao();
+      } catch (error) {
+        const intervalo = intervaloNovaTentativa(tentativa);
+        console.error(`Falha ao salvar ${descricao} (tentativa ${tentativa}):`, error);
+        setStatus(
+          `Falha ao salvar ${descricao}. Nova tentativa automática em ${Math.ceil(intervalo / 1000)}s (tentativa ${tentativa + 1}).`
+        );
+        await aguardar(intervalo);
+      }
+    }
+  };
+
   const salvarProjeto = async (projectId) => {
-    const project = projetos.find((item) => item.id === projectId);
-    if (!project) return;
+    const projectInicial = projetos.find((item) => item.id === projectId);
+    if (!projectInicial) return false;
 
     setBusy(true);
-    setStatus(`Salvando o orçamento "${project.nome}"...`);
+    setStatus(`Salvando o orçamento "${projectInicial.nome}"...`);
     try {
-      await saveLocalSnapshot({
-        cpus,
-        projetos,
-        precos: legacyPrecosRef.current,
-        projetoAtivoId,
-      });
-      await saveGoogleDriveSnapshot(
-        {
-          cpus,
-          projetos,
-          precos: legacyPrecosRef.current,
-          projetoAtivoId,
-        },
-        {
-          includeBase: false,
-          projectIds: [projectId],
+      const projectSalvo = await executarSalvamentoAteConseguir(
+        `o orçamento "${projectInicial.nome}"`,
+        async () => {
+          const dados = dadosAtuaisRef.current;
+          const projectAtual = dados.projetos.find((item) => item.id === projectId);
+          if (!projectAtual) {
+            throw new Error("O orçamento não está mais disponível.");
+          }
+
+          await saveLocalSnapshot({
+            cpus: dados.cpus,
+            projetos: dados.projetos,
+            precos: legacyPrecosRef.current,
+            projetoAtivoId: dados.projetoAtivoId,
+          });
+          await saveGoogleDriveSnapshot(
+            {
+              cpus: dados.cpus,
+              projetos: dados.projetos,
+              precos: legacyPrecosRef.current,
+              projetoAtivoId: dados.projetoAtivoId,
+            },
+            {
+              includeBase: false,
+              projectIds: [projectId],
+            }
+          );
+          return projectAtual;
         }
       );
-      projectHashesRef.current[projectId] = JSON.stringify(project);
+      projectHashesRef.current[projectId] = JSON.stringify(projectSalvo);
       setDriveConnected(true);
       setStatus(
         cpusDirty
-          ? `Orçamento "${project.nome}" e seu Banco de Preços salvos. A Base de CPUs ainda possui alterações não salvas.`
-          : `Orçamento "${project.nome}" e seu Banco de Preços salvos no Google Drive.`
+          ? `Orçamento "${projectSalvo.nome}" e seu Banco de Preços salvos. A Base de CPUs ainda possui alterações não salvas.`
+          : `Orçamento "${projectSalvo.nome}" e seu Banco de Preços salvos no Google Drive.`
       );
-    } catch (e) {
-      console.error("Erro ao salvar no Google Drive:", e);
-      setStatus("Salvo localmente. Falha ao salvar o orçamento no Drive: " + (e?.message || e));
+      return true;
     } finally {
       setBusy(false);
       setTimeout(() => setStatus(""), 12000);
@@ -747,31 +785,30 @@ export default function App() {
     setBusy(true);
     setStatus("Salvando Base de CPUs no Google Drive...");
     try {
-      await saveLocalSnapshot({
-        cpus,
-        projetos,
-        precos: legacyPrecosRef.current,
-        projetoAtivoId,
-      });
-      await saveGoogleDriveSnapshot(
-        {
-          cpus,
-          projetos,
+      await executarSalvamentoAteConseguir("a Base de CPUs", async () => {
+        const dados = dadosAtuaisRef.current;
+        await saveLocalSnapshot({
+          cpus: dados.cpus,
+          projetos: dados.projetos,
           precos: legacyPrecosRef.current,
-          projetoAtivoId,
-        },
-        {
-          includeBase: true,
-          projectIds: [],
-        }
-      );
+          projetoAtivoId: dados.projetoAtivoId,
+        });
+        await saveGoogleDriveSnapshot(
+          {
+            cpus: dados.cpus,
+            projetos: dados.projetos,
+            precos: legacyPrecosRef.current,
+            projetoAtivoId: dados.projetoAtivoId,
+          },
+          {
+            includeBase: true,
+            projectIds: [],
+          }
+        );
+      });
       setCpusDirty(false);
       setStatus("Base de CPUs salva no Google Drive.");
       return true;
-    } catch (e) {
-      console.error("Erro ao salvar a Base de CPUs no Google Drive:", e);
-      setStatus("Salvo localmente. Falha ao salvar a Base de CPUs no Drive: " + (e?.message || e));
-      return false;
     } finally {
       setBusy(false);
       setTimeout(() => setStatus(""), 12000);
