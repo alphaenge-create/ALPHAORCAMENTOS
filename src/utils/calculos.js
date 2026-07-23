@@ -11,8 +11,10 @@ const subCpuMatchText = (value) =>
 
 const subCpuLookupCache = new WeakMap();
 
-const addLookupEntry = (map, key, cpu) => {
-  if (key && !map.has(key)) map.set(key, cpu);
+const addLookupEntry = (map, prefix, value, cpu) => {
+  if (!value) return;
+  const key = `${prefix}:${value}`;
+  if (!map.has(key)) map.set(key, cpu);
 };
 
 const getSubCpuLookup = (cpusArray = []) => {
@@ -22,8 +24,8 @@ const getSubCpuLookup = (cpusArray = []) => {
 
   const map = new Map();
   cpusArray.forEach((cpu) => {
-    addLookupEntry(map, `desc:${subCpuMatchText(cpu.descricao)}`, cpu);
-    addLookupEntry(map, `codigo:${norm(cpu.codigo || "")}`, cpu);
+    addLookupEntry(map, "desc", subCpuMatchText(cpu.descricao), cpu);
+    addLookupEntry(map, "codigo", norm(cpu.codigo || ""), cpu);
   });
   subCpuLookupCache.set(cpusArray, map);
   return map;
@@ -31,10 +33,15 @@ const getSubCpuLookup = (cpusArray = []) => {
 
 export const findSubCpu = (insumo, cpusArray = []) => {
   const lookup = getSubCpuLookup(cpusArray);
+  const descricao = subCpuMatchText(insumo.descricao);
+  const descricaoComoCodigo = norm(insumo.descricao || "");
+  const codigo = norm(insumo.codigo || "");
+
   return (
-    lookup.get(`desc:${subCpuMatchText(insumo.descricao)}`) ||
-    lookup.get(`codigo:${norm(insumo.descricao || "")}`) ||
-    lookup.get(`codigo:${norm(insumo.codigo || "")}`)
+    (descricao ? lookup.get(`desc:${descricao}`) : null) ||
+    (descricaoComoCodigo ? lookup.get(`codigo:${descricaoComoCodigo}`) : null) ||
+    (codigo ? lookup.get(`codigo:${codigo}`) : null) ||
+    null
   );
 };
 
