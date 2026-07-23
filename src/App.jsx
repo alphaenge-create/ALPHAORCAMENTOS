@@ -90,6 +90,69 @@ const clienteDoProjeto = (projeto) => ({
 const clienteEstaCompleto = (cliente) =>
   Boolean(String(cliente?.nome || "").trim() && String(cliente?.local || "").trim());
 
+const prepararBancosDePrecosPorProjeto = (projetos = [], precosLegados = []) => {
+  const precosAtuais = Array.isArray(precosLegados) ? precosLegados : [];
+  const projetosSemBanco = projetos.filter(
+    (projeto) =>
+      !Object.prototype.hasOwnProperty.call(projeto, "precos") &&
+      !projeto.bancoPrecosInicializado
+  );
+
+  if (projetosSemBanco.length === 0) {
+    return {
+      projetos: projetos.map((projeto) => ({
+        ...projeto,
+        precos: Array.isArray(projeto.precos) ? projeto.precos : [],
+        bancoPrecosInicializado: true,
+      })),
+      projetoMigrado: null,
+    };
+  }
+
+  const textoProjeto = (projeto) => {
+    const cliente = clienteDoProjeto(projeto);
+    return norm(
+      `${projeto?.nome || ""} ${projeto?.cliente || ""} ${cliente.nome || ""} ${cliente.local || ""}`
+    );
+  };
+  const projetoMigrado =
+    projetosSemBanco.find((projeto) => {
+      const texto = textoProjeto(projeto);
+      return (
+        texto.includes("reforma cozinha") &&
+        texto.includes("santuario") &&
+        texto.includes("caraca")
+      );
+    }) ||
+    projetosSemBanco.find((projeto) => textoProjeto(projeto).includes("reforma cozinha")) ||
+    null;
+
+  return {
+    projetos: projetos.map((projeto) => {
+      const jaPossuiBanco =
+        Object.prototype.hasOwnProperty.call(projeto, "precos") ||
+        projeto.bancoPrecosInicializado;
+      if (jaPossuiBanco) {
+        return {
+          ...projeto,
+          precos: Array.isArray(projeto.precos) ? projeto.precos : [],
+          bancoPrecosInicializado: true,
+        };
+      }
+
+      return {
+        ...projeto,
+        precos:
+          projeto.id === projetoMigrado?.id
+            ? precosAtuais.map((preco) => ({ ...preco }))
+            : [],
+        bancoPrecosInicializado: true,
+      };
+    }),
+    projetoMigrado,
+  };
+};
+
 const materialPorContaCliente = (cliente) => cliente?.regimeMateriais === "cliente";
 const materialFaturamentoDireto = (cliente) => cliente?.regimeMateriais === "faturamentoDireto";
 const insumoEhMaterial = (tipo) => {
@@ -550,7 +613,6 @@ export default function App() {
   const [cpus, setCpusState] = useState([]);
   const [projetos, setProjetos] = useState([]);
   const [projetoAtivoId, setProjetoAtivoId] = useState("");
-  const [precos, setPrecosState] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -558,8 +620,8 @@ export default function App() {
   const fileInputRef = useRef(null);
   const cpuHashesRef = useRef({});
   const projectHashesRef = useRef({});
+  const legacyPrecosRef = useRef([]);
   const [cpusDirty, setCpusDirty] = useState(false);
-  const [precosDirty, setPrecosDirty] = useState(false);
   // Novos estados para controle de recolhimento/expansão das camadas
   const [etapasExpandidas, setEtapasExpandidas] = useState({});
   const [cpusExpandidas, setCpusExpandidas] = useState({});
@@ -569,11 +631,6 @@ export default function App() {
     setCpusState(nextCpus);
   };
 
-  const setPrecos = (nextPrecos) => {
-    setPrecosDirty(true);
-    setPrecosState(nextPrecos);
-  };
-
   const aplicarDadosCarregados = (data) => {
     if (data.empty) {
       const defaultProj = createDefaultProject();
@@ -581,24 +638,32 @@ export default function App() {
       setCpusDirty(true);
       setProjetos([defaultProj]);
       projectHashesRef.current = {};
-      setPrecosState([]);
-      setPrecosDirty(true);
+      legacyPrecosRef.current = [];
       setProjetoAtivoId(defaultProj.id);
       setStatus("Nenhum dado salvo no Firebase. Projeto inicial criado localmente.");
       return;
     }
 
+    const precosLegados = Array.isArray(data.precos) ? data.precos : [];
+    const {
+      projetos: projetosPreparados,
+      projetoMigrado,
+    } = prepararBancosDePrecosPorProjeto(data.projetos || [], precosLegados);
+
     setCpusState(data.cpus || []);
     cpuHashesRef.current = data.cpuHashes || {};
     setCpusDirty(false);
-    setProjetos(data.projetos || []);
+    setProjetos(projetosPreparados);
     projectHashesRef.current = Object.fromEntries(
-      (data.projetos || []).map((project) => [project.id, JSON.stringify(project)])
+      projetosPreparados.map((project) => [project.id, JSON.stringify(project)])
     );
-    setPrecosState(data.precos || []);
-    setPrecosDirty(false);
+    legacyPrecosRef.current = precosLegados;
     setProjetoAtivoId(data.projetoAtivoId || "");
-    setStatus("Dados carregados do Firebase.");
+    setStatus(
+      projetoMigrado && precosLegados.length > 0
+        ? `Banco de Preços atual vinculado ao orçamento "${projetoMigrado.nome}".`
+        : "Dados carregados do Firebase."
+    );
   };
 
   const carregarDados = async ({ usarDrive = true } = {}) => {
@@ -643,12 +708,17 @@ export default function App() {
     setBusy(true);
     setStatus(`Salvando o orçamento "${project.nome}"...`);
     try {
-      await saveLocalSnapshot({ cpus, projetos, precos, projetoAtivoId });
+      await saveLocalSnapshot({
+        cpus,
+        projetos,
+        precos: legacyPrecosRef.current,
+        projetoAtivoId,
+      });
       await saveGoogleDriveSnapshot(
         {
           cpus,
           projetos,
-          precos,
+          precos: legacyPrecosRef.current,
           projetoAtivoId,
         },
         {
@@ -659,8 +729,8 @@ export default function App() {
       projectHashesRef.current[projectId] = JSON.stringify(project);
       setDriveConnected(true);
       setStatus(
-        cpusDirty || precosDirty
-          ? `Orçamento "${project.nome}" salvo. A Base Geral ainda possui alterações não salvas.`
+        cpusDirty
+          ? `Orçamento "${project.nome}" salvo. A Base de CPUs ainda possui alterações não salvas.`
           : `Orçamento "${project.nome}" salvo no Google Drive.`
       );
     } catch (e) {
@@ -674,14 +744,19 @@ export default function App() {
 
   const salvarBaseGeral = async () => {
     setBusy(true);
-    setStatus("Salvando Base Geral no Google Drive...");
+    setStatus("Salvando Base de CPUs no Google Drive...");
     try {
-      await saveLocalSnapshot({ cpus, projetos, precos, projetoAtivoId });
+      await saveLocalSnapshot({
+        cpus,
+        projetos,
+        precos: legacyPrecosRef.current,
+        projetoAtivoId,
+      });
       await saveGoogleDriveSnapshot(
         {
           cpus,
           projetos,
-          precos,
+          precos: legacyPrecosRef.current,
           projetoAtivoId,
         },
         {
@@ -690,11 +765,10 @@ export default function App() {
         }
       );
       setCpusDirty(false);
-      setPrecosDirty(false);
-      setStatus("Base de CPUs e Banco de Preços salvos no Google Drive.");
+      setStatus("Base de CPUs salva no Google Drive.");
     } catch (e) {
-      console.error("Erro ao salvar a Base Geral no Google Drive:", e);
-      setStatus("Salvo localmente. Falha ao salvar a Base Geral no Drive: " + (e?.message || e));
+      console.error("Erro ao salvar a Base de CPUs no Google Drive:", e);
+      setStatus("Salvo localmente. Falha ao salvar a Base de CPUs no Drive: " + (e?.message || e));
     } finally {
       setBusy(false);
       setTimeout(() => setStatus(""), 12000);
@@ -738,6 +812,28 @@ export default function App() {
   const cadastroClienteOk = useMemo(() => clienteEstaCompleto(clienteAtivo), [clienteAtivo]);
   const etapas = useMemo(() => projetoAtivo?.etapas || [], [projetoAtivo]);
   const bdi = useMemo(() => projetoAtivo?.bdi || BDI_PADRAO, [projetoAtivo]);
+  const precos = useMemo(() => projetoAtivo?.precos || [], [projetoAtivo]);
+  const projetoAtivoDirty = useMemo(() => {
+    if (!projetoAtivo) return false;
+    return projectHashesRef.current[projetoAtivo.id] !== JSON.stringify(projetoAtivo);
+  }, [projetoAtivo]);
+
+  const setPrecos = (nextPrecos) => {
+    if (!projetoAtivoId) return;
+    setProjetos((prev) =>
+      prev.map((projeto) => {
+        if (projeto.id !== projetoAtivoId) return projeto;
+        const precosAtuais = Array.isArray(projeto.precos) ? projeto.precos : [];
+        const precosAtualizados =
+          typeof nextPrecos === "function" ? nextPrecos(precosAtuais) : nextPrecos;
+        return {
+          ...projeto,
+          precos: Array.isArray(precosAtualizados) ? precosAtualizados : [],
+          bancoPrecosInicializado: true,
+        };
+      })
+    );
+  };
 
   const setEtapas = (novasEtapas) => {
     if (!projetoAtivoId) return;
@@ -822,7 +918,7 @@ export default function App() {
       await saveLocalSnapshot({
         cpus,
         projetos: nextProjects,
-        precos,
+        precos: legacyPrecosRef.current,
         projetoAtivoId: nextActiveId,
       });
       setStatus("Orçamento excluído do Google Drive.");
@@ -1023,7 +1119,7 @@ export default function App() {
                 </>
               )}
             </nav>
-            {projetoAtivo && tabEhDeProjeto && tab !== "precos" && (
+            {projetoAtivo && tabEhDeProjeto && (
               <div className="p-2 border-t border-stone-200">
                 <button
                   type="button"
@@ -1098,6 +1194,8 @@ export default function App() {
                       cliente: "",
                       clienteCadastro: { ...CLIENTE_PADRAO },
                       etapas: [{ id: uid(), nome: "Etapa Inicial", itens: [] }],
+                      precos: [],
+                      bancoPrecosInicializado: true,
                       bdi: {
                         custoInicial: 0,
                         admCentral: 0,
@@ -1124,14 +1222,22 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {projetos.map((p) => {
                 const isActive = p.id === projetoAtivoId;
+                const precosProjetoMap = new Map(
+                  (p.precos || []).map((preco) => [precoKey(preco.descricao), preco])
+                );
                 
                 // Calcula o custo direto acumulado deste projeto específico
                 const cDiretoTotal = (p.etapas || []).reduce(
-                  (s, e) => s + (e.itens || []).reduce((s2, it) => s2 + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap), 0),
+                  (s, e) => s + (e.itens || []).reduce((s2, it) => s2 + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, precosProjetoMap), 0),
                   0
                 );
 
-                const valorVendaCalculado = calcularPrecoVendaProjeto(p.etapas || [], p.bdi || BDI_PADRAO, cpus, catalogMap).valorVenda;
+                const valorVendaCalculado = calcularPrecoVendaProjeto(
+                  p.etapas || [],
+                  p.bdi || BDI_PADRAO,
+                  cpus,
+                  precosProjetoMap
+                ).valorVenda;
 
                 return (
                   (() => {
@@ -1238,7 +1344,7 @@ export default function App() {
             catalogMap={catalogMap}
             onSaveBase={salvarBaseGeral}
             saving={busy}
-            baseDirty={cpusDirty || precosDirty}
+            baseDirty={cpusDirty}
           />
         )}
 
@@ -1925,9 +2031,10 @@ export default function App() {
             onRemove={removePreco}
             onApplyToCpus={aplicarPrecoNoOrcamentoAtivo}
             onApplyAllToCpus={aplicarTodosPrecosNoOrcamentoAtivo}
-            onSaveBase={salvarBaseGeral}
+            nomeProjeto={projetoAtivo.nome}
+            onSaveProject={() => salvarProjeto(projetoAtivo.id)}
             saving={busy}
-            baseDirty={cpusDirty || precosDirty}
+            projectDirty={projetoAtivoDirty}
           />
         )}
         </main>
@@ -2578,7 +2685,7 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
         const resultado = mesclarCpusImportadas(cpus, novas);
         setCpus(resultado.cpus);
         setImportMsg(
-          `Importação concluída: ${resultado.adicionadas} nova(s), ${resultado.atualizadas} atualizada(s), ${resultado.semMudanca} sem mudança. Clique em Salvar Base Geral para gravar na nuvem.`
+          `Importação concluída: ${resultado.adicionadas} nova(s), ${resultado.atualizadas} atualizada(s), ${resultado.semMudanca} sem mudança. Clique em Salvar Base de CPUs para gravar na nuvem.`
         );
       }
     } catch (err) {
@@ -2619,9 +2726,9 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
           onClick={onSaveBase}
           disabled={saving}
           className="flex items-center gap-1.5 px-3 py-2 text-sm bg-stone-900 text-white rounded-lg hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Salvar a Base de CPUs e o Banco de Preços compartilhados"
+          title="Salvar a Base de CPUs compartilhada"
         >
-          <Save size={15} /> {saving ? "Salvando..." : "Salvar Base Geral"}
+          <Save size={15} /> {saving ? "Salvando..." : "Salvar Base de CPUs"}
           {baseDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Alterações pendentes" />}
         </button>
       </div>
@@ -2911,9 +3018,10 @@ function PrecosTab({
   onRemove,
   onApplyToCpus,
   onApplyAllToCpus,
-  onSaveBase,
+  nomeProjeto,
+  onSaveProject,
   saving,
-  baseDirty,
+  projectDirty,
 }) {
   const [editing, setEditing] = useState(null);
   const [query, setQuery] = useState("");
@@ -3006,6 +3114,12 @@ function PrecosTab({
 
   return (
     <div className="bg-white border border-stone-200 rounded-lg p-4">
+      <div className="mb-4">
+        <h2 className="text-base font-semibold text-stone-800">Banco de Preços do Orçamento</h2>
+        <p className="text-xs text-stone-500 mt-0.5">
+          Valores exclusivos de {nomeProjeto}. Alterações não afetam os demais orçamentos.
+        </p>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
         <div className="relative w-72">
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
@@ -3023,13 +3137,13 @@ function PrecosTab({
           </button>
           <button
             type="button"
-            onClick={onSaveBase}
+            onClick={onSaveProject}
             disabled={saving}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-stone-900 text-white rounded-lg font-medium hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Salvar a Base de CPUs e o Banco de Preços compartilhados"
+            title={`Salvar o Banco de Preços do orçamento ${nomeProjeto}`}
           >
-            <Save size={13} /> {saving ? "Salvando..." : "Salvar Base Geral"}
-            {baseDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Alterações pendentes" />}
+            <Save size={13} /> {saving ? "Salvando..." : "Salvar orçamento"}
+            {projectDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Alterações pendentes" />}
           </button>
         </div>
       </div>
