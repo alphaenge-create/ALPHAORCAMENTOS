@@ -648,9 +648,17 @@ export default function App() {
     try {
       await requestGoogleDriveAccess();
       setDriveConnected(true);
-      setStatus("Google Drive conectado.");
+      setStatus("Google Drive conectado. Carregando orçamentos...");
+      const driveData = await loadGoogleDriveSnapshot();
+      if (driveData) {
+        aplicarDadosCarregados(driveData);
+        await saveLocalSnapshot(driveData);
+        setStatus("Drive conectado e orçamentos carregados.");
+      } else {
+        setStatus("Drive conectado. Ainda não há orçamentos salvos nesta conta.");
+      }
     } catch (e) {
-      setStatus("Falha ao conectar Drive: " + (e?.message || e));
+      setStatus("Falha ao conectar ou carregar o Drive: " + (e?.message || e));
     } finally {
       setBusy(false);
       setTimeout(() => setStatus(""), 8000);

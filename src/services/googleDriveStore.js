@@ -6,6 +6,10 @@ const DEFAULT_GOOGLE_CLIENT_ID = "376035181065-3gdnkppglnag1s1u3ue7kkflfe2iv5ln.
 
 let tokenClient = null;
 let accessToken = "";
+let accessTokenExpiresAt = 0;
+
+const hasValidAccessToken = () =>
+  !!accessToken && Date.now() < accessTokenExpiresAt - 60_000;
 
 const getClientId = () => {
   const configured = import.meta.env.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
@@ -56,6 +60,8 @@ export async function requestGoogleDriveAccess() {
     if (!configureGoogleDriveClientId()) throw new Error("Client ID do Google Drive nao configurado.");
   }
 
+  if (hasValidAccessToken()) return accessToken;
+
   return await new Promise((resolve, reject) => {
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: getClientId(),
@@ -66,10 +72,14 @@ export async function requestGoogleDriveAccess() {
           return;
         }
         accessToken = response.access_token;
+        accessTokenExpiresAt = Date.now() + Number(response.expires_in || 3600) * 1000;
         resolve(accessToken);
       },
+      error_callback: (error) => {
+        reject(new Error(error?.message || error?.type || "A janela de acesso ao Google Drive foi fechada."));
+      },
     });
-    tokenClient.requestAccessToken({ prompt: accessToken ? "" : "consent" });
+    tokenClient.requestAccessToken({ prompt: "" });
   });
 }
 
@@ -85,6 +95,7 @@ const driveFetch = async (url, options = {}) => {
 
   if (response.status === 401) {
     accessToken = "";
+    accessTokenExpiresAt = 0;
     await requestGoogleDriveAccess();
     return driveFetch(url, options);
   }
