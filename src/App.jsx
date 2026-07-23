@@ -622,6 +622,7 @@ export default function App() {
   const projectHashesRef = useRef({});
   const legacyPrecosRef = useRef([]);
   const [cpusDirty, setCpusDirty] = useState(false);
+  const [abaPendenteAposSalvarCpus, setAbaPendenteAposSalvarCpus] = useState(null);
   // Novos estados para controle de recolhimento/expansão das camadas
   const [etapasExpandidas, setEtapasExpandidas] = useState({});
   const [cpusExpandidas, setCpusExpandidas] = useState({});
@@ -730,8 +731,8 @@ export default function App() {
       setDriveConnected(true);
       setStatus(
         cpusDirty
-          ? `Orçamento "${project.nome}" salvo. A Base de CPUs ainda possui alterações não salvas.`
-          : `Orçamento "${project.nome}" salvo no Google Drive.`
+          ? `Orçamento "${project.nome}" e seu Banco de Preços salvos. A Base de CPUs ainda possui alterações não salvas.`
+          : `Orçamento "${project.nome}" e seu Banco de Preços salvos no Google Drive.`
       );
     } catch (e) {
       console.error("Erro ao salvar no Google Drive:", e);
@@ -766,9 +767,11 @@ export default function App() {
       );
       setCpusDirty(false);
       setStatus("Base de CPUs salva no Google Drive.");
+      return true;
     } catch (e) {
       console.error("Erro ao salvar a Base de CPUs no Google Drive:", e);
       setStatus("Salvo localmente. Falha ao salvar a Base de CPUs no Drive: " + (e?.message || e));
+      return false;
     } finally {
       setBusy(false);
       setTimeout(() => setStatus(""), 12000);
@@ -865,14 +868,39 @@ export default function App() {
     );
   };
 
-  const abrirAbaProjeto = (proximaTab) => {
-    if (proximaTab !== "cliente" && !cadastroClienteOk) {
+  const executarMudancaAba = (proximaTab, validarCadastroProjeto = false) => {
+    if (validarCadastroProjeto && proximaTab !== "cliente" && !cadastroClienteOk) {
       setTab("cliente");
       setStatus("Preencha Nome do cliente e Local da obra para continuar.");
       setTimeout(() => setStatus(""), 5000);
       return;
     }
     setTab(proximaTab);
+  };
+
+  const solicitarMudancaAba = (proximaTab, validarCadastroProjeto = false) => {
+    if (proximaTab === tab) return;
+    if (tab === "cpus" && cpusDirty) {
+      setAbaPendenteAposSalvarCpus({
+        tab: proximaTab,
+        validarCadastroProjeto,
+      });
+      return;
+    }
+    executarMudancaAba(proximaTab, validarCadastroProjeto);
+  };
+
+  const abrirAbaProjeto = (proximaTab) => {
+    solicitarMudancaAba(proximaTab, true);
+  };
+
+  const salvarBaseEContinuar = async () => {
+    const destino = abaPendenteAposSalvarCpus;
+    if (!destino) return;
+    const salvou = await salvarBaseGeral();
+    if (!salvou) return;
+    setAbaPendenteAposSalvarCpus(null);
+    executarMudancaAba(destino.tab, destino.validarCadastroProjeto);
   };
 
   const catalog = useMemo(() => buildCatalog(cpus, projetos, projetoAtivoId, precos), [cpus, projetos, projetoAtivoId, precos]);
@@ -1061,6 +1089,50 @@ export default function App() {
         </div>
       )}
 
+      {abaPendenteAposSalvarCpus && (
+        <div
+          className="fixed inset-0 z-[90] bg-stone-950/55 backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="salvar-base-cpus-title"
+        >
+          <div className="w-full max-w-md bg-white border border-stone-200 rounded-lg shadow-2xl p-6">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 shrink-0 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center">
+                <AlertTriangle size={18} />
+              </div>
+              <div>
+                <h2 id="salvar-base-cpus-title" className="text-base font-semibold text-stone-900">
+                  Salve a Base de CPUs antes de sair
+                </h2>
+                <p className="mt-1.5 text-sm text-stone-500">
+                  Existem alterações na base compartilhada. O acesso à próxima aba será liberado depois que elas forem salvas no Google Drive.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAbaPendenteAposSalvarCpus(null)}
+                disabled={busy}
+                className="px-3 py-2 text-sm border border-stone-300 rounded-md bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+              >
+                Continuar editando
+              </button>
+              <button
+                type="button"
+                onClick={salvarBaseEContinuar}
+                disabled={busy}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-stone-900 text-white rounded-md hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {busy ? <RefreshCw size={15} className="animate-spin" /> : <Save size={15} />}
+                {busy ? "Salvando..." : "Salvar e continuar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-[1500px] mx-auto px-4 py-6 lg:flex lg:items-start lg:gap-5">
         <aside className="lg:sticky lg:top-4 lg:w-64 lg:shrink-0 mb-5 lg:mb-0">
           <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden">
@@ -1072,10 +1144,10 @@ export default function App() {
             </div>
 
             <nav className="p-2 space-y-1 max-lg:flex max-lg:overflow-x-auto max-lg:space-y-0 max-lg:gap-1">
-              <SideTabBtn active={tab === "projetos"} onClick={() => setTab("projetos")} icon={<FolderKanban size={15} />}>
+              <SideTabBtn active={tab === "projetos"} onClick={() => solicitarMudancaAba("projetos")} icon={<FolderKanban size={15} />}>
                 Orçamentos ({projetos.length})
               </SideTabBtn>
-              <SideTabBtn active={tab === "cpus"} onClick={() => setTab("cpus")} icon={<Database size={15} />}>
+              <SideTabBtn active={tab === "cpus"} onClick={() => solicitarMudancaAba("cpus")} icon={<Database size={15} />}>
                 Base de CPUs ({cpus.length})
               </SideTabBtn>
 
@@ -1086,7 +1158,7 @@ export default function App() {
                       {projetoAtivo.nome}
                     </p>
                   </div>
-                  <SideTabBtn active={tab === "cliente"} onClick={() => setTab("cliente")} icon={<User size={15} />}>
+                  <SideTabBtn active={tab === "cliente"} onClick={() => abrirAbaProjeto("cliente")} icon={<User size={15} />}>
                     Cadastro Cliente
                     {!cadastroClienteOk && (
                       <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
@@ -1126,7 +1198,7 @@ export default function App() {
                   onClick={() => salvarProjeto(projetoAtivo.id)}
                   disabled={busy || !loaded}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium bg-stone-900 text-white rounded-md hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={`Salvar somente o orçamento ${projetoAtivo.nome}`}
+                  title={`Salvar o orçamento ${projetoAtivo.nome} e seu Banco de Preços`}
                 >
                   <Save size={14} /> {busy ? "Salvando..." : "Salvar orçamento"}
                 </button>
@@ -1286,7 +1358,7 @@ export default function App() {
                           }}
                           disabled={busy || !loaded}
                           className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium border border-stone-300 rounded-md bg-white text-stone-700 hover:bg-stone-100 disabled:opacity-50"
-                          title={`Salvar somente o orçamento ${p.nome}`}
+                          title={`Salvar o orçamento ${p.nome} e seu Banco de Preços`}
                         >
                           <Save size={12} /> Salvar
                         </button>
@@ -1353,7 +1425,7 @@ export default function App() {
           <div className="text-center py-20 text-stone-400">
             <FolderKanban size={40} className="mx-auto mb-3 opacity-30" />
             <p className="text-sm font-medium">Nenhum orçamento selecionado.</p>
-            <button onClick={() => setTab("projetos")} className="mt-3 text-xs underline">
+            <button onClick={() => solicitarMudancaAba("projetos")} className="mt-3 text-xs underline">
               Criar ou selecionar um orçamento
             </button>
           </div>
