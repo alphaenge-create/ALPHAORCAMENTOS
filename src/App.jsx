@@ -3214,6 +3214,29 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
     setEtapas(etapas.filter((e) => e.id !== id));
   };
 
+  const moverEtapa = (index, direction) => {
+    setEtapas((currentEtapas) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= currentEtapas.length) return currentEtapas;
+      const next = [...currentEtapas];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
+  };
+
+  const moverCpuNaEtapa = (etapaId, index, direction) => {
+    setEtapas((currentEtapas) =>
+      currentEtapas.map((etapa) => {
+        if (etapa.id !== etapaId) return etapa;
+        const targetIndex = index + direction;
+        if (targetIndex < 0 || targetIndex >= etapa.itens.length) return etapa;
+        const nextItens = [...etapa.itens];
+        [nextItens[index], nextItens[targetIndex]] = [nextItens[targetIndex], nextItens[index]];
+        return { ...etapa, itens: nextItens };
+      })
+    );
+  };
+
   const salvarNomeEtapa = (id) => {
     setEtapas(etapas.map((e) => (e.id === id ? { ...e, nome: editingEtapaNome } : e)));
     setEditingEtapaId(null);
@@ -3334,7 +3357,7 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
 
       {/* Listagem das Etapas */}
       <div className="space-y-4">
-        {etapas.map((e) => {
+        {etapas.map((e, etapaIndex) => {
           const termoBuscaEtapa = buscasPorEtapa[e.id] || "";
           const filtradasParaEstaEtapa = obterCpusFiltradas(termoBuscaEtapa);
           const activeIndex = activeIndices[e.id] !== undefined ? activeIndices[e.id] : -1;
@@ -3348,9 +3371,9 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
             <div key={e.id} className="bg-white border border-stone-200 rounded-lg overflow-visible">
               <div
                 onClick={() => toggleRecolherEtapa(e.id)}
-                className="bg-stone-200 px-4 py-2.5 flex justify-between items-center gap-3 border-b border-stone-300 cursor-pointer select-none hover:bg-stone-300"
+                className="bg-stone-200 px-4 py-2.5 flex flex-wrap justify-between items-center gap-3 border-b border-stone-300 cursor-pointer select-none hover:bg-stone-300"
               >
-                <div className="min-w-0 flex items-center gap-2">
+                <div className="min-w-0 flex-1 flex items-center gap-2">
                   {etapaRecolhida ? (
                     <ChevronRight size={15} className="text-stone-400 shrink-0" />
                   ) : (
@@ -3378,6 +3401,33 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                   )}
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
+                  {etapas.length > 1 && (
+                    <div
+                      className="flex items-center rounded-md border border-stone-300 bg-white overflow-hidden"
+                      onClick={(evt) => evt.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => moverEtapa(etapaIndex, -1)}
+                        disabled={etapaIndex === 0}
+                        className="w-7 h-7 flex items-center justify-center text-stone-500 hover:bg-stone-100 hover:text-stone-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                        title="Mover etapa para cima"
+                        aria-label="Mover etapa para cima"
+                      >
+                        <ArrowUp size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moverEtapa(etapaIndex, 1)}
+                        disabled={etapaIndex === etapas.length - 1}
+                        className="w-7 h-7 flex items-center justify-center border-l border-stone-200 text-stone-500 hover:bg-stone-100 hover:text-stone-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                        title="Mover etapa para baixo"
+                        aria-label="Mover etapa para baixo"
+                      >
+                        <ArrowDown size={13} />
+                      </button>
+                    </div>
+                  )}
                   <div className="text-right">
                     <span className="block text-[10px] text-stone-400 font-mono uppercase">Total da etapa</span>
                     <span className="font-semibold text-stone-900 font-mono text-sm">R$ {fmt(totalEtapa)}</span>
@@ -3447,7 +3497,7 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                 {e.itens.length === 0 && !termoBuscaEtapa.trim() && (
                   <p className="text-xs text-stone-400 italic pt-1">Nenhuma CPU lançada nesta etapa.</p>
                 )}
-                {e.itens.map((it) => {
+                {e.itens.map((it, itemIndex) => {
                   const estaExpandido = !!itensExpandidos[it.id]; // Por padrão, undefined avalia como falso (recolhido)
 
                   return (
@@ -3470,7 +3520,31 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-3 text-xs">
+                        <div className="flex flex-wrap items-center justify-end gap-3 text-xs">
+                          {e.itens.length > 1 && (
+                            <div className="flex items-center rounded-md border border-stone-200 bg-white overflow-hidden shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => moverCpuNaEtapa(e.id, itemIndex, -1)}
+                                disabled={itemIndex === 0}
+                                className="w-7 h-7 flex items-center justify-center text-stone-400 hover:bg-stone-100 hover:text-stone-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                title="Mover CPU para cima"
+                                aria-label="Mover CPU para cima"
+                              >
+                                <ArrowUp size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moverCpuNaEtapa(e.id, itemIndex, 1)}
+                                disabled={itemIndex === e.itens.length - 1}
+                                className="w-7 h-7 flex items-center justify-center border-l border-stone-100 text-stone-400 hover:bg-stone-100 hover:text-stone-900 disabled:opacity-25 disabled:cursor-not-allowed"
+                                title="Mover CPU para baixo"
+                                aria-label="Mover CPU para baixo"
+                              >
+                                <ArrowDown size={12} />
+                              </button>
+                            </div>
+                          )}
                           <div className="flex items-center gap-1.5">
                             <span className="text-stone-400">Qtd:</span>
                             <input type="number" step="any" value={it.quantidade} onChange={(evt) => mudarQuantidadeItem(e.id, it.id, evt.target.value)} className="w-16 border border-stone-200 rounded px-1.5 py-0.5 text-right font-mono bg-white" />
