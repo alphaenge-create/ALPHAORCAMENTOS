@@ -636,20 +636,14 @@ export default function App() {
     }
   };
 
-  const salvarDados = async () => {
+  const salvarProjeto = async (projectId) => {
+    const project = projetos.find((item) => item.id === projectId);
+    if (!project) return;
+
     setBusy(true);
-    setStatus("Salvando backup local...");
+    setStatus(`Salvando o orçamento "${project.nome}"...`);
     try {
       await saveLocalSnapshot({ cpus, projetos, precos, projetoAtivoId });
-      setStatus("Backup local salvo. Sincronizando Google Drive...");
-      const changedProjectIds = projetos
-        .filter((project) => projectHashesRef.current[project.id] !== JSON.stringify(project))
-        .map((project) => project.id);
-      const projectIdsToSave = changedProjectIds.length
-        ? changedProjectIds
-        : projetoAtivoId
-          ? [projetoAtivoId]
-          : [];
       await saveGoogleDriveSnapshot(
         {
           cpus,
@@ -658,21 +652,49 @@ export default function App() {
           projetoAtivoId,
         },
         {
-          includeBase: cpusDirty || precosDirty,
-          projectIds: projectIdsToSave,
+          includeBase: false,
+          projectIds: [projectId],
         }
       );
-      projectIdsToSave.forEach((projectId) => {
-        const project = projetos.find((item) => item.id === projectId);
-        if (project) projectHashesRef.current[projectId] = JSON.stringify(project);
-      });
+      projectHashesRef.current[projectId] = JSON.stringify(project);
       setDriveConnected(true);
-      setCpusDirty(false);
-      setPrecosDirty(false);
-      setStatus("Orçamento salvo localmente e no Google Drive.");
+      setStatus(
+        cpusDirty || precosDirty
+          ? `Orçamento "${project.nome}" salvo. A Base Geral ainda possui alterações não salvas.`
+          : `Orçamento "${project.nome}" salvo no Google Drive.`
+      );
     } catch (e) {
       console.error("Erro ao salvar no Google Drive:", e);
-      setStatus("Salvo localmente. Falha ao sincronizar Google Drive: " + (e?.message || e));
+      setStatus("Salvo localmente. Falha ao salvar o orçamento no Drive: " + (e?.message || e));
+    } finally {
+      setBusy(false);
+      setTimeout(() => setStatus(""), 12000);
+    }
+  };
+
+  const salvarBaseGeral = async () => {
+    setBusy(true);
+    setStatus("Salvando Base Geral no Google Drive...");
+    try {
+      await saveLocalSnapshot({ cpus, projetos, precos, projetoAtivoId });
+      await saveGoogleDriveSnapshot(
+        {
+          cpus,
+          projetos,
+          precos,
+          projetoAtivoId,
+        },
+        {
+          includeBase: true,
+          projectIds: [],
+        }
+      );
+      setCpusDirty(false);
+      setPrecosDirty(false);
+      setStatus("Base de CPUs e Banco de Preços salvos no Google Drive.");
+    } catch (e) {
+      console.error("Erro ao salvar a Base Geral no Google Drive:", e);
+      setStatus("Salvo localmente. Falha ao salvar a Base Geral no Drive: " + (e?.message || e));
     } finally {
       setBusy(false);
       setTimeout(() => setStatus(""), 12000);
@@ -1001,6 +1023,19 @@ export default function App() {
                 </>
               )}
             </nav>
+            {projetoAtivo && tabEhDeProjeto && tab !== "precos" && (
+              <div className="p-2 border-t border-stone-200">
+                <button
+                  type="button"
+                  onClick={() => salvarProjeto(projetoAtivo.id)}
+                  disabled={busy || !loaded}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium bg-stone-900 text-white rounded-md hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={`Salvar somente o orçamento ${projetoAtivo.nome}`}
+                >
+                  <Save size={14} /> {busy ? "Salvando..." : "Salvar orçamento"}
+                </button>
+              </div>
+            )}
           </div>
         </aside>
 
@@ -1036,15 +1071,6 @@ export default function App() {
               title="Conectar sua conta Google para salvar no Drive"
             >
               <LogIn size={13} /> {driveConnected ? "Drive conectado" : "Conectar Drive"}
-            </button>
-            <button
-              type="button"
-              onClick={salvarDados}
-              disabled={busy || !loaded}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-900 rounded-lg font-medium bg-stone-900 hover:bg-stone-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Salvar dados atuais no Google Drive"
-            >
-              <Save size={13} /> Salvar
             </button>
           </div>
         </header>
@@ -1119,8 +1145,8 @@ export default function App() {
                     }`}
                     onClick={() => { setProjetoAtivoId(p.id); setTab(clienteOk ? "custo" : "cliente"); }}
                   >
-                    <div className="flex justify-between items-start">
-                      <div>
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="min-w-0 flex-1">
                         <h3 className="font-semibold text-stone-800 text-sm flex items-center gap-1.5 uppercase">
                           <input
                             value={p.nome}
@@ -1145,17 +1171,31 @@ export default function App() {
                           <span>{clienteCard.local || "Local da obra pendente"}</span>
                         </div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removerProjeto(p);
-                        }}
-                        disabled={busy}
-                        className="text-stone-400 hover:text-red-600 p-1 rounded-md transition-colors"
-                        title="Excluir Orçamento"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            salvarProjeto(p.id);
+                          }}
+                          disabled={busy || !loaded}
+                          className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium border border-stone-300 rounded-md bg-white text-stone-700 hover:bg-stone-100 disabled:opacity-50"
+                          title={`Salvar somente o orçamento ${p.nome}`}
+                        >
+                          <Save size={12} /> Salvar
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removerProjeto(p);
+                          }}
+                          disabled={busy}
+                          className="text-stone-400 hover:text-red-600 p-1 rounded-md transition-colors"
+                          title="Excluir Orçamento"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 pt-2 border-t border-stone-100 text-xs font-mono">
@@ -1191,7 +1231,15 @@ export default function App() {
           </div>
         )}
         {tab === "cpus" && (
-          <CpuLibrary cpus={cpus} setCpus={setCpus} fileInputRef={fileInputRef} catalogMap={catalogMap} />
+          <CpuLibrary
+            cpus={cpus}
+            setCpus={setCpus}
+            fileInputRef={fileInputRef}
+            catalogMap={catalogMap}
+            onSaveBase={salvarBaseGeral}
+            saving={busy}
+            baseDirty={cpusDirty || precosDirty}
+          />
         )}
 
         {/* Abas de projeto - só renderizam se houver projeto ativo */}
@@ -1877,6 +1925,9 @@ export default function App() {
             onRemove={removePreco}
             onApplyToCpus={aplicarPrecoNoOrcamentoAtivo}
             onApplyAllToCpus={aplicarTodosPrecosNoOrcamentoAtivo}
+            onSaveBase={salvarBaseGeral}
+            saving={busy}
+            baseDirty={cpusDirty || precosDirty}
           />
         )}
         </main>
@@ -2170,7 +2221,7 @@ function SideTabBtn({ active, onClick, icon, children, disabled }) {
   );
 }
 
-function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap }) {
+function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, saving, baseDirty }) {
   const [query, setQuery] = useState("");
   const [fonteFiltro, setFonteFiltro] = useState("Todas");
   const [editing, setEditing] = useState(null);
@@ -2527,7 +2578,7 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap }) {
         const resultado = mesclarCpusImportadas(cpus, novas);
         setCpus(resultado.cpus);
         setImportMsg(
-          `Importação concluída: ${resultado.adicionadas} nova(s), ${resultado.atualizadas} atualizada(s), ${resultado.semMudanca} sem mudança. Clique em Salvar para gravar na nuvem.`
+          `Importação concluída: ${resultado.adicionadas} nova(s), ${resultado.atualizadas} atualizada(s), ${resultado.semMudanca} sem mudança. Clique em Salvar Base Geral para gravar na nuvem.`
         );
       }
     } catch (err) {
@@ -2560,8 +2611,18 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap }) {
           <Upload size={15} /> Importar/Atualizar Base
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
         </label>
-        <button onClick={() => setEditing("new")} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-stone-900 text-white rounded-lg hover:bg-stone-700">
+        <button onClick={() => setEditing("new")} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-stone-300 bg-white text-stone-700 rounded-lg hover:bg-stone-100">
           <Plus size={15} /> Nova CPU Base
+        </button>
+        <button
+          type="button"
+          onClick={onSaveBase}
+          disabled={saving}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm bg-stone-900 text-white rounded-lg hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Salvar a Base de CPUs e o Banco de Preços compartilhados"
+        >
+          <Save size={15} /> {saving ? "Salvando..." : "Salvar Base Geral"}
+          {baseDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Alterações pendentes" />}
         </button>
       </div>
 
@@ -2844,7 +2905,16 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
 }
 
 /* ---------------- ABA BANCO DE PREÇOS (PRECOS) ---------------- */
-function PrecosTab({ catalog, onUpsert, onRemove, onApplyToCpus, onApplyAllToCpus }) {
+function PrecosTab({
+  catalog,
+  onUpsert,
+  onRemove,
+  onApplyToCpus,
+  onApplyAllToCpus,
+  onSaveBase,
+  saving,
+  baseDirty,
+}) {
   const [editing, setEditing] = useState(null);
   const [query, setQuery] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "descricao", direction: "asc" });
@@ -2941,15 +3011,25 @@ function PrecosTab({ catalog, onUpsert, onRemove, onApplyToCpus, onApplyAllToCpu
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrar catálogo de preços..." className="w-full pl-8 pr-3 py-2 text-sm border border-stone-300 rounded-lg" />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <button onClick={onApplyAllToCpus} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-300 rounded-lg font-medium bg-stone-50 hover:bg-stone-100 text-stone-700">
             <RefreshCw size={13} /> Sincronizar Tudo na Planilha de Custos
           </button>
           <button onClick={exportarXls} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-300 rounded-lg font-medium bg-white hover:bg-stone-50 text-stone-700">
             <Download size={13} /> Exportar .xlsx
           </button>
-          <button onClick={() => setEditing({ id: null, descricao: "", tipo: "MAT", unidade: "un", valorUnitario: "" })} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-stone-900 text-white rounded-lg font-medium hover:bg-stone-700">
+          <button onClick={() => setEditing({ id: null, descricao: "", tipo: "MAT", unidade: "un", valorUnitario: "" })} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-300 bg-white text-stone-700 rounded-lg font-medium hover:bg-stone-100">
             <Plus size={13} /> Novo Insumo Manual
+          </button>
+          <button
+            type="button"
+            onClick={onSaveBase}
+            disabled={saving}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-stone-900 text-white rounded-lg font-medium hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Salvar a Base de CPUs e o Banco de Preços compartilhados"
+          >
+            <Save size={13} /> {saving ? "Salvando..." : "Salvar Base Geral"}
+            {baseDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Alterações pendentes" />}
           </button>
         </div>
       </div>
