@@ -3307,6 +3307,26 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
     setEtapasRecolhidas((prev) => ({ ...prev, [etapaId]: !prev[etapaId] }));
   };
 
+  const expandirTudo = () => {
+    const itensAbertos = {};
+    etapas.forEach((etapa) => {
+      (etapa.itens || []).forEach((item) => {
+        itensAbertos[item.id] = true;
+      });
+    });
+    setEtapasRecolhidas({});
+    setItensExpandidos(itensAbertos);
+  };
+
+  const recolherTudo = () => {
+    const etapasFechadas = {};
+    etapas.forEach((etapa) => {
+      etapasFechadas[etapa.id] = true;
+    });
+    setEtapasRecolhidas(etapasFechadas);
+    setItensExpandidos({});
+  };
+
   const obterCpusFiltradas = (textoBusca) => {
     if (!textoBusca || !textoBusca.trim()) return [];
     const searchTerms = norm(textoBusca).split(/\s+/).filter(Boolean);
@@ -3348,8 +3368,23 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
   
   return (
     <div className="space-y-4">
-      {/* Topo da aba: apenas o botão de Adicionar Etapa */}
-      <div className="flex justify-end items-center bg-white border border-stone-200 rounded-lg p-3">
+      <div className="flex flex-wrap justify-between items-center gap-2 bg-white border border-stone-200 rounded-lg p-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={expandirTudo}
+            className="px-2 py-1.5 text-[11px] font-medium border border-stone-200 rounded hover:bg-stone-50 text-stone-600 flex items-center gap-1"
+          >
+            <ChevronDown size={13} /> Expandir Tudo
+          </button>
+          <button
+            type="button"
+            onClick={recolherTudo}
+            className="px-2 py-1.5 text-[11px] font-medium border border-stone-200 rounded hover:bg-stone-50 text-stone-600 flex items-center gap-1"
+          >
+            <ChevronRight size={13} /> Recolher Tudo
+          </button>
+        </div>
         <button onClick={adicionarEtapa} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-stone-900 text-white rounded-lg hover:bg-stone-700">
           <Plus size={14} /> Adicionar Nova Etapa
         </button>
