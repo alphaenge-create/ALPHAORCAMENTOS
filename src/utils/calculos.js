@@ -75,51 +75,60 @@ export const cpuValorUnit = (insumos, cpusArray = [], catMap = null, visited = n
 export function buildCatalog(cpus, projetos, projetoAtivoId, precos) {
   const map = new Map();
 
+  const obterEntrada = (insumo) => {
+    const key = precoKey(insumo?.descricao);
+    if (!key) return null;
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        id: key,
+        tipo: insumo.tipo,
+        descricao: insumo.descricao,
+        unidade: insumo.unidade,
+        ocorrencias: 0,
+        valoresEncontrados: new Set(),
+        valorUnitario: "",
+      });
+    }
+    return map.get(key);
+  };
+
   (cpus || []).forEach((cpu) => {
-    (cpu.insumos || []).forEach((i) => {
-      const key = precoKey(i.descricao);
-      if (!key) return;
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          id: key,
-          tipo: i.tipo,
-          descricao: i.descricao,
-          unidade: i.unidade,
-          ocorrencias: 0,
-          valoresEncontrados: new Set(),
-          valorUnitario: "",
-        });
-      }
-    });
+    (cpu.insumos || []).forEach(obterEntrada);
   });
 
   const pAtivo = (projetos || []).find((p) => p.id === projetoAtivoId);
   if (pAtivo && pAtivo.etapas) {
+    const registrarInsumoAtivo = (insumo, cpusVisitadas = new Set()) => {
+      const entry = obterEntrada(insumo);
+      if (!entry) return;
+
+      entry.ocorrencias += 1;
+      const valor = insumo.valorUnitario;
+      if (
+        valor !== "" &&
+        valor !== null &&
+        valor !== undefined &&
+        !Number.isNaN(Number(valor))
+      ) {
+        entry.valoresEncontrados.add(Number(valor));
+      }
+
+      const subCpu = findSubCpu(insumo, cpus);
+      if (!subCpu || cpusVisitadas.has(subCpu.id)) return;
+
+      const proximoCaminho = new Set(cpusVisitadas);
+      proximoCaminho.add(subCpu.id);
+      (subCpu.insumos || []).forEach((subInsumo) =>
+        registrarInsumoAtivo(subInsumo, proximoCaminho)
+      );
+    };
+
     pAtivo.etapas.forEach((e) => {
       (e.itens || []).forEach((it) => {
-        (it.insumos || []).forEach((i) => {
-          const key = precoKey(i.descricao);
-          if (!key) return;
-          if (!map.has(key)) {
-            map.set(key, {
-              key,
-              id: key,
-              tipo: i.tipo,
-              descricao: i.descricao,
-              unidade: i.unidade,
-              ocorrencias: 0,
-              valoresEncontrados: new Set(),
-              valorUnitario: "",
-            });
-          }
-          const entry = map.get(key);
-          entry.ocorrencias += 1;
-          const v = i.valorUnitario;
-          if (v !== "" && v !== null && v !== undefined && !Number.isNaN(Number(v))) {
-            entry.valoresEncontrados.add(Number(v));
-          }
-        });
+        (it.insumos || []).forEach((insumo) =>
+          registrarInsumoAtivo(insumo, new Set(it.cpuId ? [it.cpuId] : []))
+        );
       });
     });
   }
