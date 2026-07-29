@@ -4,7 +4,7 @@ import {
   Plus, Trash2, Pencil, X, Search, Upload, Download,
   ChevronDown, ChevronRight, Database, Calculator, Copy, Save, Percent, TrendingUp, RefreshCw,
   Tags, AlertTriangle, Check, FolderKanban, HardHat, User, LogIn, MapPin, Phone, Mail, Building2, FileText,
-  ArrowDown, ArrowUp, ArrowUpDown
+  ArrowDown, ArrowUp, ArrowUpDown, CalendarDays
 } from "lucide-react";
 import { FONTES_PADRAO, TIPOS, createDefaultProject, seedCpus } from "./data/defaultData";
 import {
@@ -853,6 +853,14 @@ export default function App() {
   const etapas = useMemo(() => projetoAtivo?.etapas || [], [projetoAtivo]);
   const bdi = useMemo(() => projetoAtivo?.bdi || BDI_PADRAO, [projetoAtivo]);
   const precos = useMemo(() => projetoAtivo?.precos || [], [projetoAtivo]);
+  const cronograma = useMemo(
+    () => ({
+      dataInicio: projetoAtivo?.cronograma?.dataInicio || "",
+      semanas: projetoAtivo?.cronograma?.semanas || 12,
+      etapas: projetoAtivo?.cronograma?.etapas || {},
+    }),
+    [projetoAtivo]
+  );
   const projetoAtivoDirty = useMemo(() => {
     if (!projetoAtivo) return false;
     return projectHashesRef.current[projetoAtivo.id] !== JSON.stringify(projetoAtivo);
@@ -900,6 +908,27 @@ export default function App() {
           ...p,
           cliente: clienteCadastro.nome || "",
           clienteCadastro,
+        };
+      })
+    );
+  };
+
+  const setCronograma = (novoCronograma) => {
+    if (!projetoAtivoId) return;
+    setProjetos((prev) =>
+      prev.map((projeto) => {
+        if (projeto.id !== projetoAtivoId) return projeto;
+        const cronogramaAtual = {
+          dataInicio: projeto.cronograma?.dataInicio || "",
+          semanas: projeto.cronograma?.semanas || 12,
+          etapas: projeto.cronograma?.etapas || {},
+        };
+        return {
+          ...projeto,
+          cronograma:
+            typeof novoCronograma === "function"
+              ? novoCronograma(cronogramaAtual)
+              : novoCronograma,
         };
       })
     );
@@ -1084,7 +1113,7 @@ export default function App() {
   }, [bdi, etapas, cpus, catalogMap]);
 
   // Abas disponíveis apenas dentro de um projeto ativo
-  const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "maoobra", "materiais", "precos"];
+  const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "cronograma", "maoobra", "materiais", "precos"];
   const tabEhDeProjeto = abasProjeto.includes(tab);
 
   return (
@@ -1213,6 +1242,9 @@ export default function App() {
                   <SideTabBtn active={tab === "precovenda"} onClick={() => abrirAbaProjeto("precovenda")} icon={<TrendingUp size={15} />}>
                     Venda - R$ {fmt(bdiCalc.valorVenda)}
                   </SideTabBtn>
+                  <SideTabBtn active={tab === "cronograma"} onClick={() => abrirAbaProjeto("cronograma")} icon={<CalendarDays size={15} />}>
+                    Cronograma
+                  </SideTabBtn>
                   <SideTabBtn active={tab === "maoobra"} onClick={() => abrirAbaProjeto("maoobra")} icon={<HardHat size={15} />}>
                     Mão de Obra
                   </SideTabBtn>
@@ -1305,6 +1337,11 @@ export default function App() {
                       etapas: [{ id: uid(), nome: "Etapa Inicial", itens: [] }],
                       precos: [],
                       bancoPrecosInicializado: true,
+                      cronograma: {
+                        dataInicio: "",
+                        semanas: 12,
+                        etapas: {},
+                      },
                       bdi: {
                         custoInicial: 0,
                         admCentral: 0,
@@ -1960,6 +1997,19 @@ export default function App() {
               </div>
             </div>
           </div>
+        )}
+
+        {tab === "cronograma" && projetoAtivo && (
+          <CronogramaSemanal
+            projeto={projetoAtivo}
+            etapas={etapas}
+            cronograma={cronograma}
+            setCronograma={setCronograma}
+            bdiCalc={bdiCalc}
+            cpus={cpus}
+            catalogMap={catalogMap}
+            cliente={clienteAtivo}
+          />
         )}
 
         {tab === "maoobra" && projetoAtivo && (
@@ -4074,6 +4124,687 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const limitarInteiroCronograma = (valor, minimo, maximo, padrao = minimo) => {
+  const numero = Math.round(Number(valor));
+  if (!Number.isFinite(numero)) return padrao;
+  return Math.min(maximo, Math.max(minimo, numero));
+};
+
+const distribuirPercentuaisCronograma = (inicio, duracao) => {
+  const percentuais = {};
+  const percentualBase = Number((100 / duracao).toFixed(6));
+
+  for (let indice = 0; indice < duracao; indice += 1) {
+    const semana = inicio + indice;
+    percentuais[String(semana)] =
+      indice === duracao - 1
+        ? Number((100 - percentualBase * (duracao - 1)).toFixed(6))
+        : percentualBase;
+  }
+
+  return percentuais;
+};
+
+const dataLocalCronograma = (valor) => {
+  const partes = String(valor || "").split("-").map(Number);
+  if (partes.length !== 3 || partes.some((parte) => !Number.isFinite(parte))) return null;
+  return new Date(partes[0], partes[1] - 1, partes[2]);
+};
+
+const adicionarDiasCronograma = (data, dias) => {
+  const resultado = new Date(data);
+  resultado.setDate(resultado.getDate() + dias);
+  return resultado;
+};
+
+const formatarDataCronograma = (data) =>
+  data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+
+function CronogramaSemanal({
+  projeto,
+  etapas,
+  cronograma,
+  setCronograma,
+  bdiCalc,
+  cpus,
+  catalogMap,
+  cliente,
+}) {
+  const semanas = limitarInteiroCronograma(cronograma.semanas, 1, 104, 12);
+  const dataInicio = dataLocalCronograma(cronograma.dataInicio);
+
+  const linhas = useMemo(
+    () =>
+      (etapas || []).map((etapa, indice) => {
+        const id = etapa.id || `etapa-${indice}`;
+        const totalVenda = (etapa.itens || []).reduce(
+          (soma, item) =>
+            soma + itemVendaResumo(item, bdiCalc, cpus, catalogMap, cliente).total,
+          0
+        );
+        const configuracao = cronograma.etapas?.[id] || {};
+        const inicioPadrao = Math.min(indice + 1, semanas);
+        const inicio = limitarInteiroCronograma(
+          configuracao.inicio,
+          1,
+          semanas,
+          inicioPadrao
+        );
+        const duracao = limitarInteiroCronograma(
+          configuracao.duracao,
+          1,
+          semanas - inicio + 1,
+          1
+        );
+        const distribuicaoPadrao = distribuirPercentuaisCronograma(inicio, duracao);
+        const possuiDistribuicao =
+          configuracao.percentuais &&
+          Object.keys(configuracao.percentuais).length > 0;
+        const percentuais = possuiDistribuicao
+          ? configuracao.percentuais
+          : distribuicaoPadrao;
+
+        return {
+          id,
+          nome: etapa.nome || `Etapa ${indice + 1}`,
+          numero: indice + 1,
+          totalVenda,
+          inicio,
+          duracao,
+          percentuais,
+        };
+      }),
+    [etapas, cronograma.etapas, semanas, bdiCalc, cpus, catalogMap, cliente]
+  );
+
+  const totalProjeto = useMemo(
+    () => linhas.reduce((soma, linha) => soma + linha.totalVenda, 0),
+    [linhas]
+  );
+
+  const linhasCalculadas = useMemo(
+    () =>
+      linhas.map((linha) => {
+        const percentuais = Array.from({ length: semanas }, (_, indice) => {
+          const semana = indice + 1;
+          const ativa =
+            semana >= linha.inicio &&
+            semana < linha.inicio + linha.duracao;
+          return ativa ? Math.max(0, num(linha.percentuais[String(semana)])) : 0;
+        });
+        const somaPercentuais = percentuais.reduce(
+          (soma, percentual) => soma + percentual,
+          0
+        );
+        const pesoFisico =
+          totalProjeto > 0 ? (linha.totalVenda / totalProjeto) * 100 : 0;
+
+        return {
+          ...linha,
+          percentuais,
+          somaPercentuais,
+          pesoFisico,
+          valoresSemanais: percentuais.map(
+            (percentual) => linha.totalVenda * (percentual / 100)
+          ),
+          fisicoSemanal: percentuais.map(
+            (percentual) => pesoFisico * (percentual / 100)
+          ),
+        };
+      }),
+    [linhas, semanas, totalProjeto]
+  );
+
+  const totaisSemanais = useMemo(
+    () =>
+      Array.from({ length: semanas }, (_, indice) =>
+        linhasCalculadas.reduce(
+          (soma, linha) => soma + linha.valoresSemanais[indice],
+          0
+        )
+      ),
+    [linhasCalculadas, semanas]
+  );
+
+  const fisicoSemanal = useMemo(
+    () =>
+      Array.from({ length: semanas }, (_, indice) =>
+        linhasCalculadas.reduce(
+          (soma, linha) => soma + linha.fisicoSemanal[indice],
+          0
+        )
+      ),
+    [linhasCalculadas, semanas]
+  );
+
+  const acumuladoFinanceiro = useMemo(() => {
+    let acumulado = 0;
+    return totaisSemanais.map((valor) => {
+      acumulado += valor;
+      return acumulado;
+    });
+  }, [totaisSemanais]);
+
+  const acumuladoFisico = useMemo(() => {
+    let acumulado = 0;
+    return fisicoSemanal.map((valor) => {
+      acumulado += valor;
+      return acumulado;
+    });
+  }, [fisicoSemanal]);
+
+  const totalPlanejado = totaisSemanais.reduce((soma, valor) => soma + valor, 0);
+  const fisicoPlanejado = fisicoSemanal.reduce((soma, valor) => soma + valor, 0);
+  const saldoPlanejado =
+    Math.abs(totalProjeto - totalPlanejado) < 0.005
+      ? 0
+      : totalProjeto - totalPlanejado;
+
+  const rotuloSemana = (indice) => {
+    if (!dataInicio) return "";
+    const inicioSemana = adicionarDiasCronograma(dataInicio, indice * 7);
+    const fimSemana = adicionarDiasCronograma(inicioSemana, 6);
+    return `${formatarDataCronograma(inicioSemana)} a ${formatarDataCronograma(fimSemana)}`;
+  };
+
+  const salvarConfiguracaoEtapa = (id, configuracao) => {
+    setCronograma((atual) => ({
+      ...atual,
+      etapas: {
+        ...(atual.etapas || {}),
+        [id]: configuracao,
+      },
+    }));
+  };
+
+  const alterarPeriodo = (linha, campo, valor) => {
+    let inicio = linha.inicio;
+    let duracao = linha.duracao;
+
+    if (campo === "inicio") {
+      inicio = limitarInteiroCronograma(valor, 1, semanas, linha.inicio);
+      duracao = Math.min(duracao, semanas - inicio + 1);
+    } else {
+      duracao = limitarInteiroCronograma(
+        valor,
+        1,
+        semanas - inicio + 1,
+        linha.duracao
+      );
+    }
+
+    salvarConfiguracaoEtapa(linha.id, {
+      inicio,
+      duracao,
+      percentuais: distribuirPercentuaisCronograma(inicio, duracao),
+    });
+  };
+
+  const alterarPercentual = (linha, semana, valor) => {
+    const percentual =
+      valor === "" ? 0 : Math.min(100, Math.max(0, num(valor)));
+    const percentuais = {};
+
+    for (let numeroSemana = linha.inicio; numeroSemana < linha.inicio + linha.duracao; numeroSemana += 1) {
+      percentuais[String(numeroSemana)] =
+        numeroSemana === semana
+          ? percentual
+          : num(linha.percentuais[String(numeroSemana)]);
+    }
+
+    salvarConfiguracaoEtapa(linha.id, {
+      inicio: linha.inicio,
+      duracao: linha.duracao,
+      percentuais,
+    });
+  };
+
+  const distribuirTodasAsEtapas = () => {
+    const configuracoes = {};
+    linhas.forEach((linha) => {
+      configuracoes[linha.id] = {
+        inicio: linha.inicio,
+        duracao: linha.duracao,
+        percentuais: distribuirPercentuaisCronograma(
+          linha.inicio,
+          linha.duracao
+        ),
+      };
+    });
+    setCronograma((atual) => ({ ...atual, etapas: configuracoes }));
+  };
+
+  const exportarCronograma = () => {
+    const cabecalho = [
+      "Etapa",
+      "Valor de Venda (R$)",
+      "Peso Físico (%)",
+      "Semana Inicial",
+      "Duração (semanas)",
+    ];
+    for (let semana = 1; semana <= semanas; semana += 1) {
+      const periodo = rotuloSemana(semana - 1);
+      cabecalho.push(
+        `Semana ${semana}${periodo ? ` - ${periodo}` : ""} (%)`,
+        `Semana ${semana}${periodo ? ` - ${periodo}` : ""} (R$)`
+      );
+    }
+
+    const dados = linhasCalculadas.map((linha) => {
+      const registro = [
+        `${linha.numero}. ${linha.nome}`,
+        linha.totalVenda,
+        linha.pesoFisico,
+        linha.inicio,
+        linha.duracao,
+      ];
+      linha.percentuais.forEach((percentual, indice) => {
+        registro.push(percentual, linha.valoresSemanais[indice]);
+      });
+      return registro;
+    });
+
+    const linhaTotal = ["TOTAL SEMANAL", totalProjeto, 100, "", ""];
+    const linhaAcumulada = ["ACUMULADO", "", "", "", ""];
+    for (let indice = 0; indice < semanas; indice += 1) {
+      linhaTotal.push(fisicoSemanal[indice], totaisSemanais[indice]);
+      linhaAcumulada.push(
+        acumuladoFisico[indice],
+        acumuladoFinanceiro[indice]
+      );
+    }
+
+    const linhasPlanilha = [
+      [`CRONOGRAMA FÍSICO-FINANCEIRO SEMANAL - ${projeto.nome || "ORÇAMENTO"}`],
+      [
+        cronograma.dataInicio
+          ? `Data de início: ${dataInicio?.toLocaleDateString("pt-BR") || cronograma.dataInicio}`
+          : "Data de início não definida",
+      ],
+      [],
+      cabecalho,
+      ...dados,
+      linhaTotal,
+      linhaAcumulada,
+    ];
+    const planilha = XLSX.utils.aoa_to_sheet(linhasPlanilha);
+    const ultimaColuna = cabecalho.length - 1;
+    planilha["!merges"] = [
+      XLSX.utils.decode_range(`A1:${XLSX.utils.encode_col(ultimaColuna)}1`),
+      XLSX.utils.decode_range(`A2:${XLSX.utils.encode_col(ultimaColuna)}2`),
+    ];
+    planilha["!cols"] = [
+      { wch: 42 },
+      { wch: 18 },
+      { wch: 15 },
+      { wch: 14 },
+      { wch: 18 },
+      ...Array.from({ length: semanas * 2 }, (_, indice) => ({
+        wch: indice % 2 === 0 ? 16 : 18,
+      })),
+    ];
+    planilha["!freeze"] = { xSplit: 1, ySplit: 4 };
+
+    const faixa = XLSX.utils.decode_range(planilha["!ref"]);
+    for (let coluna = faixa.s.c; coluna <= faixa.e.c; coluna += 1) {
+      const celulaCabecalho = planilha[XLSX.utils.encode_cell({ r: 3, c: coluna })];
+      if (celulaCabecalho) {
+        celulaCabecalho.s = {
+          font: { bold: true, color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "55753A" } },
+          alignment: { horizontal: "center", vertical: "center", wrapText: true },
+          border: {
+            top: { style: "thin", color: { rgb: "D6D3D1" } },
+            bottom: { style: "thin", color: { rgb: "D6D3D1" } },
+            left: { style: "thin", color: { rgb: "D6D3D1" } },
+            right: { style: "thin", color: { rgb: "D6D3D1" } },
+          },
+        };
+      }
+    }
+
+    const primeiraLinhaDados = 4;
+    const ultimaLinhaDados = primeiraLinhaDados + linhasCalculadas.length - 1;
+    for (let linha = primeiraLinhaDados; linha <= ultimaLinhaDados + 2; linha += 1) {
+      for (let coluna = 0; coluna <= ultimaColuna; coluna += 1) {
+        const endereco = XLSX.utils.encode_cell({ r: linha, c: coluna });
+        const celula = planilha[endereco];
+        if (!celula) continue;
+        celula.s = {
+          ...(celula.s || {}),
+          font: {
+            name: "Aptos",
+            sz: 10,
+            bold: linha > ultimaLinhaDados,
+          },
+          fill:
+            linha > ultimaLinhaDados
+              ? { fgColor: { rgb: linha === ultimaLinhaDados + 1 ? "E7E5E4" : "F5F5F4" } }
+              : undefined,
+          alignment: {
+            vertical: "center",
+            wrapText: coluna === 0,
+          },
+          border: {
+            bottom: { style: "thin", color: { rgb: "E7E5E4" } },
+          },
+        };
+        if (
+          coluna === 1 ||
+          (coluna >= 5 && (coluna - 5) % 2 === 1)
+        ) {
+          celula.z = XLSX_MOEDA;
+        } else if (
+          coluna === 2 ||
+          (coluna >= 5 && (coluna - 5) % 2 === 0)
+        ) {
+          celula.z = "0.00%";
+          celula.v = num(celula.v) / 100;
+        }
+      }
+    }
+
+    if (planilha.A1) {
+      planilha.A1.s = {
+        font: { name: "Aptos", sz: 15, bold: true, color: { rgb: "385723" } },
+        alignment: { horizontal: "left", vertical: "center" },
+      };
+    }
+    if (planilha.A2) {
+      planilha.A2.s = {
+        font: { name: "Aptos", sz: 10, color: { rgb: "57534E" } },
+      };
+    }
+    planilha["!rows"] = [{ hpt: 24 }, { hpt: 18 }, { hpt: 8 }, { hpt: 38 }];
+
+    const arquivo = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(arquivo, planilha, "Cronograma Semanal");
+    XLSX.writeFile(
+      arquivo,
+      `${nomeArquivoSeguro(projeto.nome)}_Cronograma_Semanal.xlsx`
+    );
+  };
+
+  return (
+    <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden">
+      <div className="p-5 border-b border-stone-200 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-stone-800">
+            Cronograma Físico-Financeiro Semanal
+          </h2>
+          <p className="text-xs text-stone-500">
+            {linhasCalculadas.length} etapa(s) planejada(s)
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-xs text-stone-600">
+            <span className="block mb-1">Início da obra</span>
+            <input
+              type="date"
+              value={cronograma.dataInicio}
+              onChange={(evento) =>
+                setCronograma((atual) => ({
+                  ...atual,
+                  dataInicio: evento.target.value,
+                }))
+              }
+              className="h-9 border border-stone-300 rounded px-2 text-sm bg-white"
+            />
+          </label>
+          <label className="text-xs text-stone-600">
+            <span className="block mb-1">Total de semanas</span>
+            <input
+              type="number"
+              min="1"
+              max="104"
+              value={semanas}
+              onChange={(evento) =>
+                setCronograma((atual) => ({
+                  ...atual,
+                  semanas: limitarInteiroCronograma(
+                    evento.target.value,
+                    1,
+                    104,
+                    semanas
+                  ),
+                }))
+              }
+              className="h-9 w-24 border border-stone-300 rounded px-2 text-right font-mono text-sm bg-white"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={distribuirTodasAsEtapas}
+            className="h-9 px-3 inline-flex items-center gap-1.5 border border-stone-300 rounded text-xs font-medium text-stone-700 hover:bg-stone-50"
+          >
+            <RefreshCw size={14} /> Distribuir tudo
+          </button>
+          <button
+            type="button"
+            onClick={exportarCronograma}
+            className="h-9 px-3 inline-flex items-center gap-1.5 border border-emerald-700 bg-emerald-700 rounded text-xs font-medium text-white hover:bg-emerald-800"
+          >
+            <Download size={14} /> Excel
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 border-b border-stone-200 bg-stone-50">
+        <div className="px-5 py-3 border-r border-b lg:border-b-0 border-stone-200">
+          <span className="block text-[10px] uppercase text-stone-500">Venda do orçamento</span>
+          <strong className="font-mono text-sm text-stone-800">R$ {fmt(totalProjeto)}</strong>
+        </div>
+        <div className="px-5 py-3 border-b lg:border-b-0 lg:border-r border-stone-200">
+          <span className="block text-[10px] uppercase text-stone-500">Financeiro planejado</span>
+          <strong className="font-mono text-sm text-stone-800">R$ {fmt(totalPlanejado)}</strong>
+        </div>
+        <div className="px-5 py-3 border-r border-stone-200">
+          <span className="block text-[10px] uppercase text-stone-500">Físico planejado</span>
+          <strong className={`font-mono text-sm ${Math.abs(fisicoPlanejado - 100) < 0.01 ? "text-emerald-700" : "text-amber-700"}`}>
+            {fmt(fisicoPlanejado)}%
+          </strong>
+        </div>
+        <div className="px-5 py-3">
+          <span className="block text-[10px] uppercase text-stone-500">Saldo a distribuir</span>
+          <strong className={`font-mono text-sm ${Math.abs(saldoPlanejado) < 0.01 ? "text-emerald-700" : "text-amber-700"}`}>
+            R$ {fmt(saldoPlanejado)}
+          </strong>
+        </div>
+      </div>
+
+      {linhasCalculadas.length === 0 ? (
+        <div className="px-5 py-12 text-center text-sm text-stone-500">
+          Nenhuma etapa cadastrada neste orçamento.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table
+            className="w-full border-separate border-spacing-0 text-xs"
+            style={{ minWidth: `${650 + semanas * 118}px` }}
+          >
+            <thead>
+              <tr className="bg-stone-100 text-stone-600">
+                <th className="sticky left-0 z-20 bg-stone-100 min-w-[270px] px-3 py-3 text-left border-b border-r border-stone-200 font-semibold">
+                  Etapa
+                </th>
+                <th className="min-w-[120px] px-3 py-3 text-right border-b border-r border-stone-200 font-semibold">
+                  Venda
+                </th>
+                <th className="min-w-[88px] px-3 py-3 text-right border-b border-r border-stone-200 font-semibold">
+                  Peso físico
+                </th>
+                <th className="min-w-[72px] px-2 py-3 text-center border-b border-r border-stone-200 font-semibold">
+                  Início
+                </th>
+                <th className="min-w-[72px] px-2 py-3 text-center border-b border-r border-stone-200 font-semibold">
+                  Duração
+                </th>
+                {Array.from({ length: semanas }, (_, indice) => (
+                  <th
+                    key={indice}
+                    className="min-w-[118px] px-2 py-2 text-center border-b border-r border-stone-200 font-semibold"
+                  >
+                    <span className="block">Semana {indice + 1}</span>
+                    {rotuloSemana(indice) && (
+                      <span className="block mt-0.5 text-[9px] font-normal text-stone-500">
+                        {rotuloSemana(indice)}
+                      </span>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {linhasCalculadas.map((linha) => (
+                <tr key={linha.id} className="group">
+                  <td className="sticky left-0 z-10 bg-white group-hover:bg-stone-50 px-3 py-3 border-b border-r border-stone-200">
+                    <span className="block font-semibold text-stone-800">
+                      {linha.numero}. {linha.nome}
+                    </span>
+                    <span className={`block mt-1 font-mono text-[10px] ${Math.abs(linha.somaPercentuais - 100) < 0.01 ? "text-emerald-700" : "text-amber-700"}`}>
+                      Distribuído: {fmt(linha.somaPercentuais)}%
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-stone-700 border-b border-r border-stone-200 group-hover:bg-stone-50">
+                    R$ {fmt(linha.totalVenda)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-stone-700 border-b border-r border-stone-200 group-hover:bg-stone-50">
+                    {fmt(linha.pesoFisico)}%
+                  </td>
+                  <td className="px-2 py-3 border-b border-r border-stone-200 group-hover:bg-stone-50">
+                    <input
+                      type="number"
+                      min="1"
+                      max={semanas}
+                      value={linha.inicio}
+                      onChange={(evento) =>
+                        alterarPeriodo(linha, "inicio", evento.target.value)
+                      }
+                      className="w-full h-8 border border-stone-300 rounded px-1 text-center font-mono bg-white"
+                      aria-label={`Semana inicial de ${linha.nome}`}
+                    />
+                  </td>
+                  <td className="px-2 py-3 border-b border-r border-stone-200 group-hover:bg-stone-50">
+                    <input
+                      type="number"
+                      min="1"
+                      max={semanas - linha.inicio + 1}
+                      value={linha.duracao}
+                      onChange={(evento) =>
+                        alterarPeriodo(linha, "duracao", evento.target.value)
+                      }
+                      className="w-full h-8 border border-stone-300 rounded px-1 text-center font-mono bg-white"
+                      aria-label={`Duração de ${linha.nome}`}
+                    />
+                  </td>
+                  {linha.percentuais.map((percentual, indice) => {
+                    const semana = indice + 1;
+                    const ativa =
+                      semana >= linha.inicio &&
+                      semana < linha.inicio + linha.duracao;
+                    return (
+                      <td
+                        key={semana}
+                        className={`px-2 py-2 border-b border-r border-stone-200 text-right ${
+                          ativa ? "bg-emerald-50/50" : "bg-stone-50/70"
+                        }`}
+                      >
+                        {ativa ? (
+                          <>
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.01"
+                                value={Number(percentual.toFixed(6))}
+                                onChange={(evento) =>
+                                  alterarPercentual(
+                                    linha,
+                                    semana,
+                                    evento.target.value
+                                  )
+                                }
+                                className="w-16 h-7 border border-emerald-200 rounded px-1 text-right font-mono bg-white"
+                                aria-label={`Percentual de ${linha.nome} na semana ${semana}`}
+                              />
+                              <span className="text-stone-400">%</span>
+                            </div>
+                            <span className="block mt-1 font-mono text-[10px] text-stone-600">
+                              R$ {fmt(linha.valoresSemanais[indice])}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-stone-300">-</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+
+              <tr className="bg-stone-100 font-semibold text-stone-800">
+                <td className="sticky left-0 z-10 bg-stone-100 px-3 py-3 border-b border-r border-stone-300">
+                  Total semanal
+                </td>
+                <td className="px-3 py-3 text-right font-mono border-b border-r border-stone-300">
+                  R$ {fmt(totalPlanejado)}
+                </td>
+                <td className="px-3 py-3 text-right font-mono border-b border-r border-stone-300">
+                  {fmt(fisicoPlanejado)}%
+                </td>
+                <td className="border-b border-r border-stone-300" />
+                <td className="border-b border-r border-stone-300" />
+                {totaisSemanais.map((valor, indice) => (
+                  <td
+                    key={indice}
+                    className="px-2 py-2 text-right border-b border-r border-stone-300"
+                  >
+                    <span className="block font-mono text-[10px]">
+                      {fmt(fisicoSemanal[indice])}%
+                    </span>
+                    <span className="block mt-1 font-mono">
+                      R$ {fmt(valor)}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+
+              <tr className="bg-stone-900 font-semibold text-white">
+                <td className="sticky left-0 z-10 bg-stone-900 px-3 py-3 border-r border-stone-700">
+                  Acumulado
+                </td>
+                <td className="px-3 py-3 text-right font-mono border-r border-stone-700">
+                  R$ {fmt(totalPlanejado)}
+                </td>
+                <td className="px-3 py-3 text-right font-mono border-r border-stone-700">
+                  {fmt(fisicoPlanejado)}%
+                </td>
+                <td className="border-r border-stone-700" />
+                <td className="border-r border-stone-700" />
+                {acumuladoFinanceiro.map((valor, indice) => (
+                  <td
+                    key={indice}
+                    className="px-2 py-2 text-right border-r border-stone-700"
+                  >
+                    <span className="block font-mono text-[10px] text-emerald-300">
+                      {fmt(acumuladoFisico[indice])}%
+                    </span>
+                    <span className="block mt-1 font-mono text-amber-300">
+                      R$ {fmt(valor)}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

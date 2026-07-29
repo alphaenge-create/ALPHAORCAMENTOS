@@ -50,6 +50,11 @@ export const createDefaultProject = () => {
     etapas: [{ id: uid(), nome: "Etapa Inicial", itens: [] }],
     precos: [],
     bancoPrecosInicializado: true,
+    cronograma: {
+      dataInicio: "",
+      semanas: 12,
+      etapas: {},
+    },
     bdi: {
       custoInicial: 0,
       admCentral: 0.04,
