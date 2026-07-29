@@ -4176,6 +4176,14 @@ function CronogramaSemanal({
 }) {
   const semanas = limitarInteiroCronograma(cronograma.semanas, 1, 104, 12);
   const dataInicio = dataLocalCronograma(cronograma.dataInicio);
+  const tabelaScrollRef = useRef(null);
+  const barraFixaScrollRef = useRef(null);
+  const [barraFixa, setBarraFixa] = useState({
+    visivel: false,
+    esquerda: 0,
+    largura: 0,
+    larguraConteudo: 0,
+  });
 
   const linhas = useMemo(
     () =>
@@ -4303,6 +4311,65 @@ function CronogramaSemanal({
     Math.abs(totalProjeto - totalPlanejado) < 0.005
       ? 0
       : totalProjeto - totalPlanejado;
+
+  useEffect(() => {
+    const tabelaScroll = tabelaScrollRef.current;
+    if (!tabelaScroll) return undefined;
+
+    const atualizarBarraFixa = () => {
+      const retangulo = tabelaScroll.getBoundingClientRect();
+      const margem = 8;
+      const esquerda = Math.max(margem, retangulo.left);
+      const direita = Math.min(window.innerWidth - margem, retangulo.right);
+      const largura = Math.max(0, direita - esquerda);
+      const visivel =
+        largura > 100 &&
+        tabelaScroll.scrollWidth > tabelaScroll.clientWidth + 2;
+
+      setBarraFixa({
+        visivel,
+        esquerda,
+        largura,
+        larguraConteudo: tabelaScroll.scrollWidth,
+      });
+
+      requestAnimationFrame(() => {
+        if (barraFixaScrollRef.current) {
+          barraFixaScrollRef.current.scrollLeft = tabelaScroll.scrollLeft;
+        }
+      });
+    };
+
+    atualizarBarraFixa();
+    const observador = new ResizeObserver(atualizarBarraFixa);
+    observador.observe(tabelaScroll);
+    window.addEventListener("resize", atualizarBarraFixa);
+
+    return () => {
+      observador.disconnect();
+      window.removeEventListener("resize", atualizarBarraFixa);
+    };
+  }, [semanas, linhasCalculadas.length]);
+
+  const sincronizarComBarraFixa = (evento) => {
+    const barraFixaScroll = barraFixaScrollRef.current;
+    if (
+      barraFixaScroll &&
+      Math.abs(barraFixaScroll.scrollLeft - evento.currentTarget.scrollLeft) > 1
+    ) {
+      barraFixaScroll.scrollLeft = evento.currentTarget.scrollLeft;
+    }
+  };
+
+  const sincronizarComTabela = (evento) => {
+    const tabelaScroll = tabelaScrollRef.current;
+    if (
+      tabelaScroll &&
+      Math.abs(tabelaScroll.scrollLeft - evento.currentTarget.scrollLeft) > 1
+    ) {
+      tabelaScroll.scrollLeft = evento.currentTarget.scrollLeft;
+    }
+  };
 
   const rotuloSemana = (indice) => {
     if (!dataInicio) return "";
@@ -4622,7 +4689,11 @@ function CronogramaSemanal({
           Nenhuma etapa cadastrada neste orçamento.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div
+          ref={tabelaScrollRef}
+          onScroll={sincronizarComBarraFixa}
+          className="overflow-x-auto"
+        >
           <table
             className="w-full border-separate border-spacing-0 text-xs"
             style={{ minWidth: `${650 + semanas * 118}px` }}
@@ -4803,6 +4874,30 @@ function CronogramaSemanal({
               </tr>
             </tbody>
           </table>
+        </div>
+      )}
+
+      {barraFixa.visivel && (
+        <div
+          className="fixed bottom-2 z-50 pointer-events-none"
+          style={{
+            left: `${barraFixa.esquerda}px`,
+            width: `${barraFixa.largura}px`,
+          }}
+        >
+          <div className="rounded-md border border-stone-300 bg-white/95 px-1 pt-1 shadow-lg backdrop-blur-sm pointer-events-auto">
+            <div
+              ref={barraFixaScrollRef}
+              onScroll={sincronizarComTabela}
+              className="h-5 overflow-x-scroll overflow-y-hidden"
+              aria-label="Rolagem horizontal fixa do cronograma"
+            >
+              <div
+                className="h-px"
+                style={{ width: `${barraFixa.larguraConteudo}px` }}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
