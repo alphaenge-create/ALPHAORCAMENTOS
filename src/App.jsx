@@ -15,7 +15,7 @@ import {
   insumoValorUnitario,
   precoKey,
 } from "./utils/calculos";
-import { fmt, norm, num, uid } from "./utils/format";
+import { avaliarExpressaoNumerica, fmt, norm, num, uid } from "./utils/format";
 import {
   deleteGoogleDriveProject,
   loadGoogleDriveSnapshot,
@@ -3407,6 +3407,91 @@ function CpuEditor({ cpu, onCancel, onSave, catalogMap }) {
 }
 
 /* ---------------- PLANILHA DE ORÇAMENTO / CUSTO ---------------- */
+function QuantidadeFormulaInput({ valor, onConfirmar }) {
+  const textoDoValor = (valorAtual) => {
+    if (valorAtual === "" || valorAtual === null || valorAtual === undefined) return "";
+    const numero = Number(valorAtual);
+    if (!Number.isFinite(numero)) return String(valorAtual);
+    return numero.toLocaleString("pt-BR", {
+      useGrouping: false,
+      maximumFractionDigits: 15,
+    });
+  };
+  const [texto, setTexto] = useState(() => textoDoValor(valor));
+  const [emEdicao, setEmEdicao] = useState(false);
+  const [invalida, setInvalida] = useState(false);
+  const ignorarProximoBlurRef = useRef(false);
+
+  useEffect(() => {
+    if (!emEdicao && !invalida) setTexto(textoDoValor(valor));
+  }, [valor, emEdicao, invalida]);
+
+  const confirmarFormula = () => {
+    const textoLimpo = texto.trim();
+    if (!textoLimpo) {
+      onConfirmar("");
+      setInvalida(false);
+      return;
+    }
+
+    const resultado = avaliarExpressaoNumerica(textoLimpo);
+    if (resultado === null) {
+      setInvalida(true);
+      return;
+    }
+
+    onConfirmar(resultado);
+    setTexto(textoDoValor(resultado));
+    setInvalida(false);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="text"
+      value={texto}
+      onFocus={(evt) => {
+        setEmEdicao(true);
+        evt.currentTarget.select();
+      }}
+      onChange={(evt) => {
+        setTexto(evt.target.value);
+        setInvalida(false);
+      }}
+      onBlur={() => {
+        setEmEdicao(false);
+        if (ignorarProximoBlurRef.current) {
+          ignorarProximoBlurRef.current = false;
+          return;
+        }
+        confirmarFormula();
+      }}
+      onKeyDown={(evt) => {
+        if (evt.key === "Enter") {
+          evt.preventDefault();
+          evt.currentTarget.blur();
+        } else if (evt.key === "Escape") {
+          ignorarProximoBlurRef.current = true;
+          setTexto(textoDoValor(valor));
+          setInvalida(false);
+          evt.currentTarget.blur();
+        }
+      }}
+      aria-invalid={invalida}
+      title={
+        invalida
+          ? "Fórmula inválida"
+          : "Aceita fórmulas como =2+3, 10-1,5, 4*2 e (3+2)*4"
+      }
+      className={`w-24 border rounded px-1.5 py-0.5 text-right font-mono bg-white outline-none ${
+        invalida
+          ? "border-red-400 ring-1 ring-red-200"
+          : "border-stone-200 focus:border-stone-500"
+      }`}
+    />
+  );
+}
+
 function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPreco }) {
   const [buscasPorEtapa, setBuscasPorEtapa] = useState({}); // Controla a busca de cada etapa individualmente
   const [editingEtapaId, setEditingEtapaId] = useState(null);
@@ -3805,7 +3890,10 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                           )}
                           <div className="flex items-center gap-1.5">
                             <span className="text-stone-400">Qtd:</span>
-                            <input type="number" step="any" value={it.quantidade} onChange={(evt) => mudarQuantidadeItem(e.id, it.id, evt.target.value)} className="w-16 border border-stone-200 rounded px-1.5 py-0.5 text-right font-mono bg-white" />
+                            <QuantidadeFormulaInput
+                              valor={it.quantidade}
+                              onConfirmar={(quantidade) => mudarQuantidadeItem(e.id, it.id, quantidade)}
+                            />
                             <span className="text-stone-500 font-medium">/{it.unidade}</span>
                           </div>
                           <div className="text-right">
