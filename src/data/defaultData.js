@@ -53,6 +53,7 @@ export const createDefaultProject = () => {
     cronograma: {
       dataInicio: "",
       semanas: 12,
+      horasSemana: 44,
       etapas: {},
     },
     bdi: {

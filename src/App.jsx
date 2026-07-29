@@ -4,8 +4,9 @@ import {
   Plus, Trash2, Pencil, X, Search, Upload, Download,
   ChevronDown, ChevronRight, Database, Calculator, Copy, Save, Percent, TrendingUp, RefreshCw,
   Tags, AlertTriangle, Check, FolderKanban, HardHat, User, LogIn, MapPin, Phone, Mail, Building2, FileText,
-  ArrowDown, ArrowUp, ArrowUpDown, CalendarDays
+  ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, BarChart3
 } from "lucide-react";
+import HistogramaMaoObra from "./HistogramaMaoObra";
 import { FONTES_PADRAO, TIPOS, createDefaultProject, seedCpus } from "./data/defaultData";
 import {
   applyCatalogToInsumos,
@@ -16,6 +17,7 @@ import {
   precoKey,
 } from "./utils/calculos";
 import { avaliarExpressaoNumerica, fmt, norm, num, uid } from "./utils/format";
+import { consolidarMaoDeObra } from "./utils/maoObra";
 import {
   deleteGoogleDriveProject,
   loadGoogleDriveSnapshot,
@@ -857,6 +859,7 @@ export default function App() {
     () => ({
       dataInicio: projetoAtivo?.cronograma?.dataInicio || "",
       semanas: projetoAtivo?.cronograma?.semanas || 12,
+      horasSemana: projetoAtivo?.cronograma?.horasSemana || 44,
       etapas: projetoAtivo?.cronograma?.etapas || {},
     }),
     [projetoAtivo]
@@ -921,6 +924,7 @@ export default function App() {
         const cronogramaAtual = {
           dataInicio: projeto.cronograma?.dataInicio || "",
           semanas: projeto.cronograma?.semanas || 12,
+          horasSemana: projeto.cronograma?.horasSemana || 44,
           etapas: projeto.cronograma?.etapas || {},
         };
         return {
@@ -1113,7 +1117,7 @@ export default function App() {
   }, [bdi, etapas, cpus, catalogMap]);
 
   // Abas disponíveis apenas dentro de um projeto ativo
-  const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "cronograma", "maoobra", "materiais", "precos"];
+  const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "cronograma", "histograma", "maoobra", "materiais", "precos"];
   const tabEhDeProjeto = abasProjeto.includes(tab);
 
   return (
@@ -1245,6 +1249,9 @@ export default function App() {
                   <SideTabBtn active={tab === "cronograma"} onClick={() => abrirAbaProjeto("cronograma")} icon={<CalendarDays size={15} />}>
                     Cronograma
                   </SideTabBtn>
+                  <SideTabBtn active={tab === "histograma"} onClick={() => abrirAbaProjeto("histograma")} icon={<BarChart3 size={15} />}>
+                    Histograma
+                  </SideTabBtn>
                   <SideTabBtn active={tab === "maoobra"} onClick={() => abrirAbaProjeto("maoobra")} icon={<HardHat size={15} />}>
                     Mão de Obra
                   </SideTabBtn>
@@ -1340,6 +1347,7 @@ export default function App() {
                       cronograma: {
                         dataInicio: "",
                         semanas: 12,
+                        horasSemana: 44,
                         etapas: {},
                       },
                       bdi: {
@@ -2012,6 +2020,16 @@ export default function App() {
           />
         )}
 
+        {tab === "histograma" && projetoAtivo && (
+          <HistogramaMaoObra
+            projeto={projetoAtivo}
+            etapas={etapas}
+            cronograma={cronograma}
+            setCronograma={setCronograma}
+            cpus={cpus}
+          />
+        )}
+
         {tab === "maoobra" && projetoAtivo && (
           <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden p-5 space-y-4">
             <div>
@@ -2030,40 +2048,11 @@ export default function App() {
 
               <div className="divide-y divide-stone-200 max-h-[500px] overflow-y-auto">
                 {(() => {
-                  const mos = new Map();
-                  (etapas || []).forEach(e => {
-                    (e.itens || []).forEach(it => {
-                      const qtdCpu = num(it.quantidade);
-                      (it.insumos || []).forEach(ins => {
-                        const tipo = String(ins.tipo || "").toUpperCase().trim();
-                        if (tipo === "MO" || tipo.includes("MÃO") || tipo.includes("MAO")) {
-                          if (!String(ins.descricao || "").trim()) return;
-                          
-                          const chave = ins.descricao.trim().toLowerCase();
-                          const qtdCalc = num(ins.coeficiente) * qtdCpu;
-                          
-                          const entry = catalogMap.get(precoKey(ins.descricao));
-                          const vUnit = entry && entry.valorUnitario !== "" ? num(entry.valorUnitario) : num(ins.valorUnitario);
-                          
-                          if (mos.has(chave)) {
-                            const existente = mos.get(chave);
-                            existente.qtd += qtdCalc;
-                            existente.total += qtdCalc * vUnit;
-                          } else {
-                            mos.set(chave, {
-                              descricao: ins.descricao,
-                              unidade: ins.unidade || "h",
-                              qtd: qtdCalc,
-                              valorUnit: vUnit,
-                              total: qtdCalc * vUnit
-                            });
-                          }
-                        }
-                      });
-                    });
-                  });
-
-                  const listaMo = Array.from(mos.values()).sort((a, b) => b.total - a.total);
+                  const listaMo = consolidarMaoDeObra(
+                    etapas,
+                    cpus,
+                    catalogMap
+                  );
                   if (listaMo.length === 0) {
                     return <div className="p-8 text-center text-stone-400 italic text-xs">Nenhuma mão de obra localizada no orçamento.</div>;
                   }
