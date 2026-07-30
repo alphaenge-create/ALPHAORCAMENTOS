@@ -4,7 +4,7 @@ import {
   Plus, Trash2, Pencil, X, Search, Upload, Download,
   ChevronDown, ChevronRight, Database, Calculator, Copy, Save, Percent, TrendingUp, RefreshCw,
   Tags, AlertTriangle, Check, FolderKanban, HardHat, User, LogIn, MapPin, Phone, Mail, Building2, FileText,
-  ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, BarChart3
+  ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, BarChart3, ChevronLeft
 } from "lucide-react";
 import HistogramaMaoObra from "./HistogramaMaoObra";
 import { FONTES_PADRAO, TIPOS, createDefaultProject, seedCpus } from "./data/defaultData";
@@ -99,6 +99,57 @@ const clienteDoProjeto = (projeto) => ({
 
 const clienteEstaCompleto = (cliente) =>
   Boolean(String(cliente?.nome || "").trim() && String(cliente?.local || "").trim());
+
+const obterStatusProjeto = (projeto) => {
+  if (!clienteEstaCompleto(clienteDoProjeto(projeto))) {
+    return {
+      id: "cadastro_pendente",
+      label: "Cadastro pendente",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+
+  const status = normalizarBusca(projeto?.status || "");
+  if (status === "rascunho") {
+    return {
+      id: "rascunho",
+      label: "Rascunho",
+      className: "border-stone-200 bg-stone-100 text-stone-600",
+    };
+  }
+  if (status === "concluido") {
+    return {
+      id: "concluido",
+      label: "Concluído",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
+  }
+
+  return {
+    id: "em_elaboracao",
+    label: "Em elaboração",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  };
+};
+
+const formatarAtualizacaoProjeto = (valor) => {
+  if (!valor) return "Sem registro";
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return "Sem registro";
+
+  const agora = new Date();
+  const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const inicioData = new Date(data.getFullYear(), data.getMonth(), data.getDate());
+  const dias = Math.round((inicioHoje - inicioData) / 86400000);
+  const hora = data.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (dias === 0) return `Hoje, ${hora}`;
+  if (dias === 1) return `Ontem, ${hora}`;
+  return data.toLocaleDateString("pt-BR");
+};
 
 const aguardar = (tempoMs) => new Promise((resolve) => setTimeout(resolve, tempoMs));
 
@@ -642,6 +693,10 @@ export default function App() {
   // Novos estados para controle de recolhimento/expansão das camadas
   const [etapasExpandidas, setEtapasExpandidas] = useState({});
   const [cpusExpandidas, setCpusExpandidas] = useState({});
+  const [buscaProjetos, setBuscaProjetos] = useState("");
+  const [filtroStatusProjetos, setFiltroStatusProjetos] = useState("todos");
+  const [ordenacaoProjetos, setOrdenacaoProjetos] = useState("recentes");
+  const [paginaProjetos, setPaginaProjetos] = useState(1);
 
   dadosAtuaisRef.current = { cpus, projetos, projetoAtivoId };
 
@@ -756,16 +811,24 @@ export default function App() {
             throw new Error("O orçamento não está mais disponível.");
           }
 
+          const atualizadoEm = new Date().toISOString();
+          const projetosAtualizados = dados.projetos.map((item) =>
+            item.id === projectId ? { ...item, atualizadoEm } : item
+          );
+          const projectAtualizado = projetosAtualizados.find(
+            (item) => item.id === projectId
+          );
+
           await saveLocalSnapshot({
             cpus: dados.cpus,
-            projetos: dados.projetos,
+            projetos: projetosAtualizados,
             precos: legacyPrecosRef.current,
             projetoAtivoId: dados.projetoAtivoId,
           });
           await saveGoogleDriveSnapshot(
             {
               cpus: dados.cpus,
-              projetos: dados.projetos,
+              projetos: projetosAtualizados,
               precos: legacyPrecosRef.current,
               projetoAtivoId: dados.projetoAtivoId,
             },
@@ -774,8 +837,15 @@ export default function App() {
               projectIds: [projectId],
             }
           );
-          return projectAtual;
+          return projectAtualizado;
         }
+      );
+      setProjetos((prev) =>
+        prev.map((item) =>
+          item.id === projectId
+            ? { ...item, atualizadoEm: projectSalvo.atualizadoEm }
+            : item
+        )
       );
       projectHashesRef.current[projectId] = JSON.stringify(projectSalvo);
       setDriveConnected(true);
@@ -1124,6 +1194,119 @@ export default function App() {
     return calcularPrecoVendaProjeto(etapas, bdi, cpus, catalogMap);
   }, [bdi, etapas, cpus, catalogMap]);
 
+  const projetosComResumo = useMemo(
+    () =>
+      projetos.map((projeto, indiceOriginal) => {
+        const cliente = clienteDoProjeto(projeto);
+        const precosProjetoMap = new Map(
+          (projeto.precos || []).map((preco) => [
+            precoKey(preco.descricao),
+            preco,
+          ])
+        );
+        const custoDireto = (projeto.etapas || []).reduce(
+          (totalEtapa, etapa) =>
+            totalEtapa +
+            (etapa.itens || []).reduce(
+              (totalItem, item) =>
+                totalItem +
+                num(item.quantidade) *
+                  cpuValorUnit(item.insumos, cpus, precosProjetoMap),
+              0
+            ),
+          0
+        );
+        const valorVenda = calcularPrecoVendaProjeto(
+          projeto.etapas || [],
+          projeto.bdi || BDI_PADRAO,
+          cpus,
+          precosProjetoMap
+        ).valorVenda;
+        const statusProjeto = obterStatusProjeto(projeto);
+
+        return {
+          projeto,
+          cliente,
+          custoDireto,
+          valorVenda,
+          statusProjeto,
+          indiceOriginal,
+          dataOrdenacao:
+            Date.parse(projeto.atualizadoEm || projeto.criadoEm || "") || 0,
+          textoBusca: normalizarBusca(
+            `${projeto.nome || ""} ${cliente.nome || ""} ${cliente.local || ""} ${cliente.endereco || ""}`
+          ),
+        };
+      }),
+    [projetos, cpus]
+  );
+
+  const projetosFiltrados = useMemo(() => {
+    const termos = normalizarBusca(buscaProjetos)
+      .split(/\s+/)
+      .filter(Boolean);
+    const filtrados = projetosComResumo.filter((resumo) => {
+      const correspondeBusca = termos.every((termo) =>
+        resumo.textoBusca.includes(termo)
+      );
+      const correspondeStatus =
+        filtroStatusProjetos === "todos" ||
+        resumo.statusProjeto.id === filtroStatusProjetos;
+      return correspondeBusca && correspondeStatus;
+    });
+
+    return [...filtrados].sort((a, b) => {
+      if (ordenacaoProjetos === "nome") {
+        return String(a.projeto.nome || "").localeCompare(
+          String(b.projeto.nome || ""),
+          "pt-BR",
+          { sensitivity: "base" }
+        );
+      }
+      if (ordenacaoProjetos === "maior_valor") {
+        return b.valorVenda - a.valorVenda;
+      }
+      if (a.dataOrdenacao !== b.dataOrdenacao) {
+        return b.dataOrdenacao - a.dataOrdenacao;
+      }
+      return a.indiceOriginal - b.indiceOriginal;
+    });
+  }, [
+    projetosComResumo,
+    buscaProjetos,
+    filtroStatusProjetos,
+    ordenacaoProjetos,
+  ]);
+
+  const projetosPorPagina = 10;
+  const totalPaginasProjetos = Math.max(
+    1,
+    Math.ceil(projetosFiltrados.length / projetosPorPagina)
+  );
+  const paginaProjetosAtual = Math.min(
+    paginaProjetos,
+    totalPaginasProjetos
+  );
+  const projetosPaginados = projetosFiltrados.slice(
+    (paginaProjetosAtual - 1) * projetosPorPagina,
+    paginaProjetosAtual * projetosPorPagina
+  );
+
+  useEffect(() => {
+    setPaginaProjetos(1);
+  }, [buscaProjetos, filtroStatusProjetos, ordenacaoProjetos]);
+
+  useEffect(() => {
+    if (paginaProjetos > totalPaginasProjetos) {
+      setPaginaProjetos(totalPaginasProjetos);
+    }
+  }, [paginaProjetos, totalPaginasProjetos]);
+
+  const abrirProjetoDaLista = (projeto, cliente) => {
+    setProjetoAtivoId(projeto.id);
+    setTab(clienteEstaCompleto(cliente) ? "custo" : "cliente");
+  };
+
   // Abas disponíveis apenas dentro de um projeto ativo
   const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "cronograma", "histograma", "maoobra", "materiais", "precos"];
   const tabEhDeProjeto = abasProjeto.includes(tab);
@@ -1347,6 +1530,8 @@ export default function App() {
                     {
                       id: pId,
                       nome: `Novo Orçamento - ${prev.length + 1}`,
+                      criadoEm: new Date().toISOString(),
+                      atualizadoEm: "",
                       cliente: "",
                       clienteCadastro: { ...CLIENTE_PADRAO },
                       etapas: [{ id: uid(), nome: "Etapa Inicial", itens: [] }],
@@ -1381,120 +1566,347 @@ export default function App() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {projetos.map((p) => {
-                const isActive = p.id === projetoAtivoId;
-                const precosProjetoMap = new Map(
-                  (p.precos || []).map((preco) => [precoKey(preco.descricao), preco])
-                );
-                
-                // Calcula o custo direto acumulado deste projeto específico
-                const cDiretoTotal = (p.etapas || []).reduce(
-                  (s, e) => s + (e.itens || []).reduce((s2, it) => s2 + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, precosProjetoMap), 0),
-                  0
-                );
-
-                const valorVendaCalculado = calcularPrecoVendaProjeto(
-                  p.etapas || [],
-                  p.bdi || BDI_PADRAO,
-                  cpus,
-                  precosProjetoMap
-                ).valorVenda;
-
-                return (
-                  (() => {
-                    const clienteCard = clienteDoProjeto(p);
-                    const clienteOk = clienteEstaCompleto(clienteCard);
-                    return (
-                  <div
-                    key={p.id}
-                    className={`bg-white border rounded-xl p-4 shadow-xs space-y-3 cursor-pointer transition-all ${
-                      isActive ? "border-stone-900 ring-1 ring-stone-900 bg-stone-50/20" : "border-stone-200 hover:border-stone-400"
-                    }`}
-                    onClick={() => { setProjetoAtivoId(p.id); setTab(clienteOk ? "custo" : "cliente"); }}
+            <div className="bg-white border border-stone-200 rounded-lg">
+              <div className="p-4 border-b border-stone-200 flex flex-col lg:flex-row lg:items-center gap-3">
+                <div className="relative flex-1 min-w-0">
+                  <Search
+                    size={15}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none"
+                  />
+                  <input
+                    type="search"
+                    value={buscaProjetos}
+                    onChange={(e) => setBuscaProjetos(e.target.value)}
+                    placeholder="Buscar orçamento, cliente ou local..."
+                    className="w-full h-10 pl-9 pr-3 text-sm bg-white border border-stone-300 rounded-md outline-none focus:border-stone-600"
+                  />
+                </div>
+                <select
+                  value={filtroStatusProjetos}
+                  onChange={(e) => setFiltroStatusProjetos(e.target.value)}
+                  aria-label="Filtrar orçamentos por status"
+                  className="h-10 px-3 text-sm bg-white border border-stone-300 rounded-md outline-none focus:border-stone-600 lg:w-48"
+                >
+                  <option value="todos">Todos os status</option>
+                  <option value="em_elaboracao">Em elaboração</option>
+                  <option value="cadastro_pendente">Cadastro pendente</option>
+                  <option value="rascunho">Rascunho</option>
+                  <option value="concluido">Concluído</option>
+                </select>
+                <div className="relative lg:w-44">
+                  <ArrowUpDown
+                    size={14}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none"
+                  />
+                  <select
+                    value={ordenacaoProjetos}
+                    onChange={(e) => setOrdenacaoProjetos(e.target.value)}
+                    aria-label="Ordenar orçamentos"
+                    className="w-full h-10 pl-9 pr-3 text-sm bg-white border border-stone-300 rounded-md outline-none focus:border-stone-600 appearance-none"
                   >
-                    <div className="flex justify-between items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <h3 className="font-semibold text-stone-800 text-sm flex items-center gap-1.5 uppercase">
-                          <input
-                            value={p.nome}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setProjetos(prev => prev.map(x => x.id === p.id ? { ...x, nome: e.target.value } : x))}
-                            className="bg-transparent border-b border-transparent hover:border-stone-300 focus:border-stone-600 outline-none w-full uppercase font-semibold text-stone-800 text-sm"
-                          />
-                        </h3>
-                        <input
-                          value={clienteCard.nome || ""}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => setProjetos(prev => prev.map(x => {
-                            if (x.id !== p.id) return x;
-                            const cadastro = { ...clienteDoProjeto(x), nome: e.target.value };
-                            return { ...x, cliente: cadastro.nome, clienteCadastro: cadastro };
-                          }))}
-                          placeholder="Nome do cliente"
-                          className="text-xs text-stone-400 bg-transparent border-b border-transparent hover:border-stone-300 focus:border-stone-500 outline-none w-full mt-0.5"
-                        />
-                        <div className="text-[11px] text-stone-400 mt-1 flex items-center gap-1">
-                          <MapPin size={11} />
-                          <span>{clienteCard.local || "Local da obra pendente"}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            salvarProjeto(p.id);
-                          }}
-                          disabled={busy || !loaded}
-                          className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium border border-stone-300 rounded-md bg-white text-stone-700 hover:bg-stone-100 disabled:opacity-50"
-                          title={`Salvar o orçamento ${p.nome} e seu Banco de Preços`}
-                        >
-                          <Save size={12} /> Salvar
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removerProjeto(p);
-                          }}
-                          disabled={busy}
-                          className="text-stone-400 hover:text-red-600 p-1 rounded-md transition-colors"
-                          title="Excluir Orçamento"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
+                    <option value="recentes">Mais recentes</option>
+                    <option value="nome">Ordem alfabética</option>
+                    <option value="maior_valor">Maior valor</option>
+                  </select>
+                  <ChevronDown
+                    size={14}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none"
+                  />
+                </div>
+              </div>
 
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-stone-100 text-xs font-mono">
-                      <div>
-                        <span className="text-stone-400 block font-sans text-[10px] uppercase">Custo Direto:</span>
-                        <span className="text-stone-600 font-medium">R$ {fmt(cDiretoTotal)}</span>
+              {projetosPaginados.length === 0 ? (
+                <div className="py-16 px-4 text-center">
+                  <Search size={30} className="mx-auto text-stone-300 mb-3" />
+                  <p className="text-sm font-medium text-stone-600">
+                    Nenhum orçamento encontrado
+                  </p>
+                  <p className="text-xs text-stone-400 mt-1">
+                    Ajuste a busca ou o filtro para visualizar outros projetos.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="hidden xl:block overflow-x-auto">
+                    <div className="min-w-[960px]">
+                      <div className="grid grid-cols-[minmax(145px,1.2fr)_minmax(165px,1.3fr)_50px_105px_115px_80px_105px_108px] gap-3 px-5 py-3 bg-stone-50 border-b border-stone-200 text-[10px] font-semibold uppercase text-stone-500">
+                        <div>Orçamento</div>
+                        <div>Cliente / Local</div>
+                        <div>Etapas</div>
+                        <div className="text-right">Custo direto</div>
+                        <div className="text-right">Preço de venda</div>
+                        <div>Atualizado</div>
+                        <div>Status</div>
+                        <div className="text-right">Ações</div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-stone-400 block font-sans text-[10px] uppercase">Preço Estimado (Venda):</span>
-                        <span className="text-stone-900 font-bold text-sm">R$ {fmt(valorVendaCalculado)}</span>
-                      </div>
-                    </div>
 
-                    <div className="flex justify-between items-center pt-1 text-[11px]">
-                      <span className="text-stone-400">{(p.etapas || []).length} etapa(s) cadastrada(s)</span>
-                      {!clienteOk && (
-                        <span className="text-amber-700 font-semibold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">
-                          Cadastro pendente
-                        </span>
-                      )}
-                      {isActive && (
-                        <span className="text-stone-800 font-semibold bg-stone-200 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">
-                          Selecionado ativo
-                        </span>
-                      )}
+                      {projetosPaginados.map((resumo) => {
+                        const {
+                          projeto,
+                          cliente,
+                          custoDireto,
+                          valorVenda,
+                          statusProjeto,
+                        } = resumo;
+                        const isActive = projeto.id === projetoAtivoId;
+
+                        return (
+                          <div
+                            key={projeto.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => abrirProjetoDaLista(projeto, cliente)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                abrirProjetoDaLista(projeto, cliente);
+                              }
+                            }}
+                            className={`grid grid-cols-[minmax(145px,1.2fr)_minmax(165px,1.3fr)_50px_105px_115px_80px_105px_108px] gap-3 px-5 py-4 border-b border-stone-200 last:border-b-0 items-center cursor-pointer outline-none transition-colors border-l-4 ${
+                              isActive
+                                ? "border-l-[#6f9255] bg-[#f3f7ef]"
+                                : "border-l-transparent hover:bg-stone-50 focus:bg-stone-50"
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-stone-900 uppercase truncate">
+                                {projeto.nome || "Orçamento sem nome"}
+                              </p>
+                              <p className="text-[11px] text-stone-400 mt-1 truncate">
+                                {cliente.nome || "Cliente não cadastrado"}
+                              </p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs text-stone-700 truncate">
+                                {cliente.nome || "Cliente não cadastrado"}
+                              </p>
+                              <p className="text-[11px] text-stone-400 mt-1 flex items-center gap-1 min-w-0">
+                                <MapPin size={11} className="shrink-0" />
+                                <span className="truncate">
+                                  {cliente.local || "Local da obra pendente"}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="text-xs text-stone-600">
+                              {(projeto.etapas || []).length}
+                            </div>
+                            <div className="text-xs text-right font-mono text-stone-600 whitespace-nowrap">
+                              R$ {fmt(custoDireto)}
+                            </div>
+                            <div className="text-sm text-right font-mono font-bold text-stone-900 whitespace-nowrap">
+                              R$ {fmt(valorVenda)}
+                            </div>
+                            <div className="text-[11px] text-stone-500 whitespace-nowrap">
+                              {formatarAtualizacaoProjeto(projeto.atualizadoEm)}
+                            </div>
+                            <div>
+                              <span
+                                className={`inline-flex px-2 py-1 rounded border text-[10px] font-medium whitespace-nowrap ${statusProjeto.className}`}
+                              >
+                                {statusProjeto.label}
+                              </span>
+                            </div>
+                            <div className="flex justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrirProjetoDaLista(projeto, cliente);
+                                }}
+                                className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-600 hover:bg-stone-100"
+                                title={`Abrir o orçamento ${projeto.nome}`}
+                              >
+                                <ChevronRight size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  salvarProjeto(projeto.id);
+                                }}
+                                disabled={busy || !loaded}
+                                className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-600 hover:bg-stone-100 disabled:opacity-50"
+                                title={`Salvar o orçamento ${projeto.nome}`}
+                              >
+                                <Save size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removerProjeto(projeto);
+                                }}
+                                disabled={busy}
+                                className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                                title={`Excluir o orçamento ${projeto.nome}`}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                    );
-                  })()
-                );
-              })}
+
+                  <div className="xl:hidden">
+                    {projetosPaginados.map((resumo) => {
+                      const {
+                        projeto,
+                        cliente,
+                        custoDireto,
+                        valorVenda,
+                        statusProjeto,
+                      } = resumo;
+                      const isActive = projeto.id === projetoAtivoId;
+
+                      return (
+                        <div
+                          key={projeto.id}
+                          className={`p-4 border-b border-stone-200 last:border-b-0 border-l-4 ${
+                            isActive
+                              ? "border-l-[#6f9255] bg-[#f3f7ef]"
+                              : "border-l-transparent"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => abrirProjetoDaLista(projeto, cliente)}
+                            className="w-full text-left"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-stone-900 uppercase truncate">
+                                  {projeto.nome || "Orçamento sem nome"}
+                                </p>
+                                <p className="text-xs text-stone-500 mt-1 truncate">
+                                  {cliente.nome || "Cliente não cadastrado"}
+                                </p>
+                                <p className="text-[11px] text-stone-400 mt-1 flex items-center gap-1">
+                                  <MapPin size={11} className="shrink-0" />
+                                  <span className="truncate">
+                                    {cliente.local || "Local da obra pendente"}
+                                  </span>
+                                </p>
+                              </div>
+                              <span
+                                className={`shrink-0 inline-flex px-2 py-1 rounded border text-[10px] font-medium ${statusProjeto.className}`}
+                              >
+                                {statusProjeto.label}
+                              </span>
+                            </div>
+                          </button>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-stone-200/70">
+                            <div>
+                              <p className="text-[9px] uppercase text-stone-400">Etapas</p>
+                              <p className="text-xs font-medium text-stone-700 mt-0.5">
+                                {(projeto.etapas || []).length}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase text-stone-400">Custo direto</p>
+                              <p className="text-xs font-mono text-stone-700 mt-0.5 whitespace-nowrap">
+                                R$ {fmt(custoDireto)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase text-stone-400">Preço de venda</p>
+                              <p className="text-xs font-mono font-bold text-stone-900 mt-0.5 whitespace-nowrap">
+                                R$ {fmt(valorVenda)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase text-stone-400">Atualizado</p>
+                              <p className="text-xs text-stone-600 mt-0.5 whitespace-nowrap">
+                                {formatarAtualizacaoProjeto(projeto.atualizadoEm)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center mt-4">
+                            {isActive ? (
+                              <span className="text-[10px] font-semibold uppercase text-[#56713f]">
+                                Orçamento ativo
+                              </span>
+                            ) : (
+                              <span />
+                            )}
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => abrirProjetoDaLista(projeto, cliente)}
+                                className="w-9 h-9 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-600"
+                                title={`Abrir o orçamento ${projeto.nome}`}
+                              >
+                                <ChevronRight size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => salvarProjeto(projeto.id)}
+                                disabled={busy || !loaded}
+                                className="w-9 h-9 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-600 disabled:opacity-50"
+                                title={`Salvar o orçamento ${projeto.nome}`}
+                              >
+                                <Save size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removerProjeto(projeto)}
+                                disabled={busy}
+                                className="w-9 h-9 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-500 disabled:opacity-50"
+                                title={`Excluir o orçamento ${projeto.nome}`}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              <div className="px-4 py-3 border-t border-stone-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-xs text-stone-500">
+                  {projetosFiltrados.length === 0
+                    ? "0 orçamentos"
+                    : `Mostrando ${(paginaProjetosAtual - 1) * projetosPorPagina + 1}-${Math.min(
+                        paginaProjetosAtual * projetosPorPagina,
+                        projetosFiltrados.length
+                      )} de ${projetosFiltrados.length} orçamento(s)`}
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPaginaProjetos((pagina) => Math.max(1, pagina - 1))
+                    }
+                    disabled={paginaProjetosAtual <= 1}
+                    className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-35 disabled:cursor-not-allowed"
+                    title="Página anterior"
+                  >
+                    <ChevronLeft size={15} />
+                  </button>
+                  <span className="min-w-8 h-8 px-2 inline-flex items-center justify-center border border-[#8eaa78] rounded-md text-xs font-semibold text-[#56713f] bg-white">
+                    {paginaProjetosAtual}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPaginaProjetos((pagina) =>
+                        Math.min(totalPaginasProjetos, pagina + 1)
+                      )
+                    }
+                    disabled={paginaProjetosAtual >= totalPaginasProjetos}
+                    className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-35 disabled:cursor-not-allowed"
+                    title="Próxima página"
+                  >
+                    <ChevronRight size={15} />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

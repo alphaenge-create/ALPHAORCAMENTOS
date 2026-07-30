@@ -30,6 +30,8 @@ export const createDefaultProject = () => {
   return {
     id: pId,
     nome: "Orcamento Padrao Inicial",
+    criadoEm: new Date().toISOString(),
+    atualizadoEm: "",
     cliente: "",
     clienteCadastro: {
       nome: "",
