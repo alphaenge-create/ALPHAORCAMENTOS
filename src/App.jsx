@@ -27,6 +27,14 @@ import {
 } from "./utils/format";
 import { consolidarMaoDeObra } from "./utils/maoObra";
 import {
+  etapaComOpcaoAtiva,
+  etapasComOpcaoAtiva,
+  grupoAlternativaDoItem,
+  gruposAlternativasDaEtapa,
+  itemIncluidoNoCalculo,
+  itensAtivosDaEtapa,
+} from "./utils/alternativas";
+import {
   deleteGoogleDriveProject,
   loadGoogleDriveSnapshot,
   requestGoogleDriveAccess,
@@ -266,7 +274,7 @@ const itemVendaResumo = (item, bdiCalc, cpus, catalogMap, cliente = {}) => {
 
 const montarItensProposta = (etapas, bdiCalc, cpus, catalogMap, cliente = {}) =>
   (etapas || []).map((etapa, idxEtapa) => {
-    const itens = (etapa.itens || []).map((item, idxItem) => ({
+    const itens = itensAtivosDaEtapa(etapa).map((item, idxItem) => ({
       numero: `${idxEtapa + 1}.${idxItem + 1}`,
       descricao: item.servico || item.descricao || "",
       unidade: item.unidade || "",
@@ -280,6 +288,50 @@ const montarItensProposta = (etapas, bdiCalc, cpus, catalogMap, cliente = {}) =>
       itens,
     };
   });
+
+const montarComparativosProposta = (
+  etapas,
+  bdiCalc,
+  cpus,
+  catalogMap,
+  cliente = {}
+) =>
+  (etapas || []).flatMap((etapa) =>
+    gruposAlternativasDaEtapa(etapa).map((grupo) => ({
+      etapaNome: etapa.nome,
+      grupoNome: grupo.nome,
+      opcoes: (grupo.opcoes || []).map((opcao) => {
+        const etapasDaOpcao = etapasComOpcaoAtiva(
+          etapas,
+          etapa.id,
+          grupo.id,
+          opcao.id
+        );
+        const valorVenda = etapasDaOpcao.reduce(
+          (totalEtapas, etapaAtual) =>
+            totalEtapas +
+            itensAtivosDaEtapa(etapaAtual).reduce(
+              (totalItens, item) =>
+                totalItens +
+                itemVendaResumo(
+                  item,
+                  bdiCalc,
+                  cpus,
+                  catalogMap,
+                  cliente
+                ).total,
+              0
+            ),
+          0
+        );
+        return {
+          ...opcao,
+          selecionada: grupo.opcaoAtivaId === opcao.id,
+          valorVenda,
+        };
+      }),
+    }))
+  );
 
 const XLSX_MOEDA = '_-"R$"\\ * #,##0.00_-;\\-"R$"\\ * #,##0.00_-;_-"R$"\\ * "-"??_-;_-@';
 const XLSX_NUMERO = "###,###,##0.00";
@@ -397,14 +449,51 @@ const criarAbaVendaModelo = (grupos, fatorVenda = 1) => {
 
 const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
   const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, cliente);
+  const comparativos = montarComparativosProposta(
+    etapas,
+    bdiCalc,
+    cpus,
+    catalogMap,
+    cliente
+  );
   const wb = XLSX.utils.book_new();
   const wsValores = criarAbaVendaModelo(grupos, bdiCalc?.FatorBdi || 1);
   XLSX.utils.book_append_sheet(wb, wsValores, "VENDA");
+  if (comparativos.length > 0) {
+    const linhas = [["ETAPA", "GRUPO", "ALTERNATIVA", "SELECIONADA", "TOTAL DA PROPOSTA"]];
+    comparativos.forEach((grupo) =>
+      grupo.opcoes.forEach((opcao) =>
+        linhas.push([
+          grupo.etapaNome,
+          grupo.grupoNome,
+          opcao.nome,
+          opcao.selecionada ? "SIM" : "NÃO",
+          opcao.valorVenda,
+        ])
+      )
+    );
+    const wsAlternativas = XLSX.utils.aoa_to_sheet(linhas);
+    wsAlternativas["!cols"] = [
+      { wch: 28 },
+      { wch: 32 },
+      { wch: 28 },
+      { wch: 14 },
+      { wch: 20 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsAlternativas, "ALTERNATIVAS");
+  }
   XLSX.writeFile(wb, `${nomeArquivoSeguro(projeto.nome)}_Proposta.xlsx`);
 };
 
 const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
   const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, cliente);
+  const comparativos = montarComparativosProposta(
+    etapas,
+    bdiCalc,
+    cpus,
+    catalogMap,
+    cliente
+  );
   const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
   const hoje = new Date();
   const dataHoje = hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -470,6 +559,21 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     `)
     .join("");
 
+  const linhasAlternativas = comparativos
+    .flatMap((grupo) =>
+      grupo.opcoes.map(
+        (opcao) => `
+          <tr class="${opcao.selecionada ? "alternativa-selecionada" : ""}">
+            <td>${escapeHtml(grupo.grupoNome)}</td>
+            <td>${escapeHtml(opcao.nome)}</td>
+            <td>${opcao.selecionada ? "Considerada no total" : "Alternativa"}</td>
+            <td>R$ ${fmt(opcao.valorVenda)}</td>
+          </tr>
+        `
+      )
+    )
+    .join("");
+
   const listaResponsabilidadesAlpha = responsabilidadesAlpha.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   const listaResponsabilidadesCliente = responsabilidadesCliente.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 
@@ -513,6 +617,11 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     .grupo td { background: var(--alpha-soft); color: var(--alpha-dark); font-weight: 700; border-bottom: 0.6pt solid var(--line); }
     .total td { background: var(--alpha); color: #fff; font-weight: 700; font-size: 10pt; }
     .total td:first-child { text-align: center; }
+    .alternativas th:nth-child(1), .alternativas td:nth-child(1) { width: 34%; }
+    .alternativas th:nth-child(2), .alternativas td:nth-child(2) { width: 28%; }
+    .alternativas th:nth-child(3), .alternativas td:nth-child(3) { width: 20%; }
+    .alternativas th:nth-child(4), .alternativas td:nth-child(4) { width: 18%; text-align: right; }
+    .alternativa-selecionada td { background: var(--alpha-soft); color: var(--alpha-dark); font-weight: 700; }
     ul { margin: 0 0 12px 18px; padding: 0; line-height: 1.15; }
     li { margin: 0 0 4px; text-align: justify; }
     .assinatura { margin-top: 48px; width: 260px; border-top: 1px solid var(--alpha-dark); text-align: center; padding-top: 6px; color: var(--alpha-dark); font-weight: 700; }
@@ -562,6 +671,13 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     <h2>Valores:</h2>
     <p>Segue relação da mão de obra especializada para execução e acompanhamento dos serviços apresentados em visita técnica, totalizando o valor de <strong>R$ ${fmt(totalGeral)}</strong>.</p>
     <p><strong>Condição dos materiais:</strong> ${escapeHtml(descricaoRegimeMateriais)}</p>
+    ${comparativos.length > 0 ? `
+      <h2>ALTERNATIVAS TÉCNICAS</h2>
+      <table class="alternativas">
+        <thead><tr><th>GRUPO</th><th>ALTERNATIVA</th><th>SITUAÇÃO</th><th>TOTAL DA PROPOSTA</th></tr></thead>
+        <tbody>${linhasAlternativas}</tbody>
+      </table>
+    ` : ""}
     <h2>PLANILHA DE MATERIAL</h2>
     <table class="valores">
       <thead><tr><th>ITEM</th><th>DESCRIÇÃO DOS SERVIÇOS</th><th>UNID.</th><th>QUANT.</th><th>VALOR UNIT.</th><th>VALOR TOTAL</th><th>TOTAL DO ITEM</th></tr></thead>
@@ -643,7 +759,7 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
   let totalPrecoVenda = 0;
 
   (etapas || []).forEach((e) => {
-    (e.itens || []).forEach((it) => {
+    itensAtivosDaEtapa(e).forEach((it) => {
       const qtdCpu = num(it.quantidade);
       (it.insumos || []).forEach((ins) => {
         const tipo = String(ins.tipo || "").toUpperCase().trim();
@@ -670,9 +786,35 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
     faturamentoDireto,
     totalDiValor,
     totalDiRate,
+    custoDireto: totalCustoDireto,
     valorVenda: totalPrecoVenda,
   };
 };
+
+const calcularComparativosAlternativas = (etapas, bdi, cpus, catalogMap) =>
+  (etapas || []).flatMap((etapa) =>
+    gruposAlternativasDaEtapa(etapa).map((grupo) => ({
+      etapaId: etapa.id,
+      etapaNome: etapa.nome,
+      grupoId: grupo.id,
+      grupoNome: grupo.nome,
+      opcaoAtivaId: grupo.opcaoAtivaId,
+      opcoes: (grupo.opcoes || []).map((opcao) => {
+        const calculo = calcularPrecoVendaProjeto(
+          etapasComOpcaoAtiva(etapas, etapa.id, grupo.id, opcao.id),
+          bdi,
+          cpus,
+          catalogMap
+        );
+        return {
+          ...opcao,
+          selecionada: opcao.id === grupo.opcaoAtivaId,
+          custoDireto: calculo.custoDireto,
+          valorVenda: calculo.valorVenda,
+        };
+      }),
+    }))
+  );
 
 export default function App() {
   const [tab, setTab] = useState("projetos");
@@ -1164,7 +1306,7 @@ export default function App() {
   const processarMateriais = useMemo(() => {
     const resumoMAT = {};
     etapas.forEach((etapa) => {
-      (etapa.itens || []).forEach((item) => {
+      itensAtivosDaEtapa(etapa).forEach((item) => {
         const qtdItem = num(item.quantidade);
         (item.insumos || []).forEach((insumo) => {
           // Filtra o que for do tipo "MAT" ou o que NÃƒO for Mão de Obra (MO) ou Equipamento (EQUIP)
@@ -1199,7 +1341,13 @@ export default function App() {
 
   const grandTotal = useMemo(() => {
     return etapas.reduce(
-      (s, e) => s + e.itens.reduce((s2, it) => s2 + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap), 0),
+      (s, e) =>
+        s +
+        itensAtivosDaEtapa(e).reduce(
+          (s2, it) =>
+            s2 + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap),
+          0
+        ),
       0
     );
   }, [etapas, cpus, catalogMap]);
@@ -1207,6 +1355,11 @@ export default function App() {
   const bdiCalc = useMemo(() => {
     return calcularPrecoVendaProjeto(etapas, bdi, cpus, catalogMap);
   }, [bdi, etapas, cpus, catalogMap]);
+
+  const comparativosAlternativas = useMemo(
+    () => calcularComparativosAlternativas(etapas, bdi, cpus, catalogMap),
+    [etapas, bdi, cpus, catalogMap]
+  );
 
   const projetosComResumo = useMemo(
     () =>
@@ -1221,7 +1374,7 @@ export default function App() {
         const custoDireto = (projeto.etapas || []).reduce(
           (totalEtapa, etapa) =>
             totalEtapa +
-            (etapa.itens || []).reduce(
+            itensAtivosDaEtapa(etapa).reduce(
               (totalItem, item) =>
                 totalItem +
                 num(item.quantidade) *
@@ -2090,8 +2243,8 @@ export default function App() {
                     const data = [];
                     data.push(["ESTRUTURA", "DESCRIÇÃO", "UND", "QTD PROP.", "CUSTO UNIT", "CUSTO TOTAL"]);
                     etapas.forEach((etapa, idxE) => {
-                      data.push([`${idxE + 1}`, etapa.nome, "", "", "", (etapa.itens || []).reduce((acc, it) => acc + (num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap)), 0)]);
-                      (etapa.itens || []).forEach((item, idxI) => {
+                      data.push([`${idxE + 1}`, etapa.nome, "", "", "", itensAtivosDaEtapa(etapa).reduce((acc, it) => acc + (num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap)), 0)]);
+                      itensAtivosDaEtapa(etapa).forEach((item, idxI) => {
                         const numCpu = `${idxE + 1}.${idxI + 1}`;
                         data.push([numCpu, item.servico || item.descricao, item.unidade, num(item.quantidade), cpuValorUnit(item.insumos, cpus, catalogMap), num(item.quantidade) * cpuValorUnit(item.insumos, cpus, catalogMap)]);
                         (item.insumos || []).forEach((ins, idxIn) => {
@@ -2166,11 +2319,11 @@ export default function App() {
                             <span className="truncate">{numEtapa}. {etapa.nome}</span>
                           </span>
                           <span className="col-span-2 text-right font-mono">
-                            R$ {fmt((etapa.itens || []).reduce((acc, it) => acc + (num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap)), 0))}
+                            R$ {fmt(itensAtivosDaEtapa(etapa).reduce((acc, it) => acc + (num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap)), 0))}
                           </span>
                         </div>
 
-                        {isEtapaAberta && (etapa.itens || []).map((item, idxItem) => {
+                        {isEtapaAberta && itensAtivosDaEtapa(etapa).map((item, idxItem) => {
                           const numCpu = `${numEtapa}.${idxItem + 1}`;
                           const itemId = item.id || `item-${numCpu}`;
                           const isCpuAberta = !!cpusExpandidas[itemId];
@@ -2286,7 +2439,7 @@ export default function App() {
                     data.push(["ESTRUTURA", "DESCRIÇÃO", "UND", "QTD PROP.", "PREÇO UNIT VENDA", "TOTAL VENDA"]);
                     etapas.forEach((etapa, idxE) => {
                       let totalEtapaVenda = 0;
-                      (etapa.itens || []).forEach(it => {
+                      itensAtivosDaEtapa(etapa).forEach(it => {
                         const qCpu = num(it.quantidade);
                         (it.insumos || []).forEach(ins => {
                           const tIn = String(ins.tipo || "").toUpperCase().trim();
@@ -2298,7 +2451,7 @@ export default function App() {
 
                       data.push([`${idxE + 1}`, etapa.nome, "", "", "", totalEtapaVenda]);
                       
-                      (etapa.itens || []).forEach((item, idxI) => {
+                      itensAtivosDaEtapa(etapa).forEach((item, idxI) => {
                         const numCpu = `${idxE + 1}.${idxI + 1}`;
                         let totalItemVenda = 0;
                         (item.insumos || []).forEach(ins => {
@@ -2387,6 +2540,85 @@ export default function App() {
               </div>
             </div>
 
+            {comparativosAlternativas.length > 0 && (
+              <div className="border border-amber-200 rounded-lg overflow-hidden">
+                <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200">
+                  <h3 className="text-xs font-semibold text-amber-900">
+                    Comparativo de alternativas
+                  </h3>
+                </div>
+                <div className="divide-y divide-amber-100">
+                  {comparativosAlternativas.map((grupo) => {
+                    const valorSelecionado =
+                      grupo.opcoes.find((opcao) => opcao.selecionada)
+                        ?.valorVenda || 0;
+                    return (
+                      <div
+                        key={`${grupo.etapaId}-${grupo.grupoId}`}
+                        className="p-3 bg-white"
+                      >
+                        <div className="mb-2">
+                          <p className="text-[10px] uppercase text-stone-400">
+                            {grupo.etapaNome}
+                          </p>
+                          <p className="text-xs font-semibold text-stone-800">
+                            {grupo.grupoNome}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                          {grupo.opcoes.map((opcao) => {
+                            const diferenca =
+                              opcao.valorVenda - valorSelecionado;
+                            return (
+                              <button
+                              key={opcao.id}
+                              type="button"
+                              onClick={() =>
+                                setEtapas((atuais) =>
+                                  atuais.map((etapa) =>
+                                    etapa.id === grupo.etapaId
+                                      ? etapaComOpcaoAtiva(
+                                          etapa,
+                                          grupo.grupoId,
+                                          opcao.id
+                                        )
+                                      : etapa
+                                  )
+                                )
+                              }
+                              className={`text-left border rounded-md px-3 py-2 ${
+                                opcao.selecionada
+                                  ? "border-emerald-400 bg-emerald-50"
+                                  : "border-stone-200 bg-white hover:bg-stone-50"
+                              }`}
+                            >
+                              <span className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold text-stone-800 truncate">
+                                  {opcao.nome}
+                                </span>
+                                {opcao.selecionada && (
+                                  <Check size={13} className="text-emerald-600 shrink-0" />
+                                )}
+                              </span>
+                              <span className="mt-1 block font-mono text-sm font-semibold text-stone-900">
+                                R$ {fmt(opcao.valorVenda)}
+                              </span>
+                              {!opcao.selecionada && (
+                                <span className="block text-[10px] text-stone-400">
+                                  {diferenca >= 0 ? "Acréscimo" : "Economia"}: R$ {fmt(Math.abs(diferenca))}
+                                </span>
+                              )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div id="area-planilha-venda" className="border border-stone-200 rounded-lg overflow-hidden bg-white">
               <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-stone-100 border-b border-stone-200 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
                 <span className="col-span-6">Estrutura (Etapa / CPU / Insumo)</span>
@@ -2408,7 +2640,7 @@ export default function App() {
                     const isEtapaAberta = !!etapasExpandidas[etapaId];
 
                     let totalEtapaComBdi = 0;
-                    (etapa.itens || []).forEach(it => {
+                    itensAtivosDaEtapa(etapa).forEach(it => {
                       const qCpu = num(it.quantidade);
                       (it.insumos || []).forEach(ins => {
                         const tIn = String(ins.tipo || "").toUpperCase().trim();
@@ -2433,7 +2665,7 @@ export default function App() {
                           </span>
                         </div>
 
-                        {isEtapaAberta && (etapa.itens || []).map((item, idxItem) => {
+                        {isEtapaAberta && itensAtivosDaEtapa(etapa).map((item, idxItem) => {
                           const numCpu = `${numEtapa}.${idxItem + 1}`;
                           const itemId = item.id || `item-${numCpu}`;
                           const isCpuAberta = !!cpusExpandidas[itemId];
@@ -2621,7 +2853,7 @@ export default function App() {
                 {(() => {
                   const mats = new Map();
                   (etapas || []).forEach(e => {
-                    (e.itens || []).forEach(it => {
+                    itensAtivosDaEtapa(e).forEach(it => {
                       const qtdCpu = num(it.quantidade);
                       (it.insumos || []).forEach(ins => {
                         const tipo = String(ins.tipo || "").toUpperCase().trim();
@@ -4064,6 +4296,147 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
     setEtapas(etapas.filter((e) => e.id !== id));
   };
 
+  const adicionarGrupoAlternativas = (etapaId) => {
+    const opcaoAId = uid();
+    const opcaoBId = uid();
+    setEtapas((atuais) =>
+      atuais.map((etapa) => {
+        if (etapa.id !== etapaId) return etapa;
+        const grupos = gruposAlternativasDaEtapa(etapa);
+        return {
+          ...etapa,
+          gruposAlternativas: [
+            ...grupos,
+            {
+              id: uid(),
+              nome: `Alternativa técnica ${grupos.length + 1}`,
+              opcaoAtivaId: opcaoAId,
+              opcoes: [
+                { id: opcaoAId, nome: "Opção A" },
+                { id: opcaoBId, nome: "Opção B" },
+              ],
+            },
+          ],
+        };
+      })
+    );
+  };
+
+  const atualizarGrupoAlternativas = (etapaId, grupoId, atualizador) => {
+    setEtapas((atuais) =>
+      atuais.map((etapa) =>
+        etapa.id !== etapaId
+          ? etapa
+          : {
+              ...etapa,
+              gruposAlternativas: gruposAlternativasDaEtapa(etapa).map(
+                (grupo) =>
+                  grupo.id === grupoId ? atualizador(grupo) : grupo
+              ),
+            }
+      )
+    );
+  };
+
+  const adicionarOpcaoAlternativa = (etapaId, grupoId) => {
+    atualizarGrupoAlternativas(etapaId, grupoId, (grupo) => ({
+      ...grupo,
+      opcoes: [
+        ...(grupo.opcoes || []),
+        {
+          id: uid(),
+          nome: `Opção ${String.fromCharCode(65 + (grupo.opcoes || []).length)}`,
+        },
+      ],
+    }));
+  };
+
+  const removerOpcaoAlternativa = (etapaId, grupoId, opcaoId) => {
+    setEtapas((atuais) =>
+      atuais.map((etapa) => {
+        if (etapa.id !== etapaId) return etapa;
+        const grupoAtual = gruposAlternativasDaEtapa(etapa).find(
+          (grupo) => grupo.id === grupoId
+        );
+        if (!grupoAtual || (grupoAtual.opcoes || []).length <= 2) return etapa;
+        const novasOpcoes = grupoAtual.opcoes.filter(
+          (opcao) => opcao.id !== opcaoId
+        );
+        return {
+          ...etapa,
+          gruposAlternativas: gruposAlternativasDaEtapa(etapa).map((grupo) =>
+            grupo.id === grupoId
+              ? {
+                  ...grupo,
+                  opcoes: novasOpcoes,
+                  opcaoAtivaId:
+                    grupo.opcaoAtivaId === opcaoId
+                      ? novasOpcoes[0]?.id || ""
+                      : grupo.opcaoAtivaId,
+                }
+              : grupo
+          ),
+          itens: (etapa.itens || []).map((item) =>
+            item.alternativaGrupoId === grupoId &&
+            item.alternativaOpcaoId === opcaoId
+              ? {
+                  ...item,
+                  alternativaGrupoId: "",
+                  alternativaOpcaoId: "",
+                }
+              : item
+          ),
+        };
+      })
+    );
+  };
+
+  const removerGrupoAlternativas = (etapaId, grupoId) => {
+    setEtapas((atuais) =>
+      atuais.map((etapa) =>
+        etapa.id !== etapaId
+          ? etapa
+          : {
+              ...etapa,
+              gruposAlternativas: gruposAlternativasDaEtapa(etapa).filter(
+                (grupo) => grupo.id !== grupoId
+              ),
+              itens: (etapa.itens || []).map((item) =>
+                item.alternativaGrupoId === grupoId
+                  ? {
+                      ...item,
+                      alternativaGrupoId: "",
+                      alternativaOpcaoId: "",
+                    }
+                  : item
+              ),
+            }
+      )
+    );
+  };
+
+  const vincularItemAlternativa = (etapaId, itemId, valor) => {
+    const [grupoId = "", opcaoId = ""] = String(valor || "").split("|");
+    setEtapas((atuais) =>
+      atuais.map((etapa) =>
+        etapa.id !== etapaId
+          ? etapa
+          : {
+              ...etapa,
+              itens: (etapa.itens || []).map((item) =>
+                item.id === itemId
+                  ? {
+                      ...item,
+                      alternativaGrupoId: grupoId,
+                      alternativaOpcaoId: opcaoId,
+                    }
+                  : item
+              ),
+            }
+      )
+    );
+  };
+
   const moverEtapa = (index, direction) => {
     setEtapas((currentEtapas) => {
       const targetIndex = index + direction;
@@ -4160,7 +4533,7 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
   const expandirTudo = () => {
     const itensAbertos = {};
     etapas.forEach((etapa) => {
-      (etapa.itens || []).forEach((item) => {
+      itensAtivosDaEtapa(etapa).forEach((item) => {
         itensAbertos[item.id] = true;
       });
     });
@@ -4247,10 +4620,11 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
           const filtradasParaEstaEtapa = obterCpusFiltradas(termoBuscaEtapa);
           const activeIndex = activeIndices[e.id] !== undefined ? activeIndices[e.id] : -1;
           const etapaRecolhida = !!etapasRecolhidas[e.id];
-          const totalEtapa = (e.itens || []).reduce(
+          const totalEtapa = itensAtivosDaEtapa(e).reduce(
             (s, it) => s + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap),
             0
           );
+          const gruposAlternativas = gruposAlternativasDaEtapa(e);
 
           return (
             <div key={e.id} className="bg-white border border-stone-200 rounded-lg overflow-visible">
@@ -4334,6 +4708,148 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
               {/* Contêiner expande dinamicamente ao digitar na busca */}
               {!etapaRecolhida && (
               <div className={`p-4 space-y-3 transition-all ${termoBuscaEtapa.trim() ? "min-h-[400px]" : "min-h-0"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-stone-700">
+                      Alternativas técnicas
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => adicionarGrupoAlternativas(e.id)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium border border-amber-300 bg-amber-50 text-amber-800 rounded-md hover:bg-amber-100"
+                  >
+                    <Plus size={13} /> Grupo de alternativas
+                  </button>
+                </div>
+
+                {gruposAlternativas.length > 0 && (
+                  <div className="space-y-2">
+                    {gruposAlternativas.map((grupo) => (
+                      <div
+                        key={grupo.id}
+                        className="border border-amber-200 bg-amber-50/40 rounded-md p-3"
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={grupo.nome || ""}
+                            onChange={(evt) =>
+                              atualizarGrupoAlternativas(
+                                e.id,
+                                grupo.id,
+                                (atual) => ({
+                                  ...atual,
+                                  nome: evt.target.value,
+                                })
+                              )
+                            }
+                            className="min-w-0 flex-1 bg-transparent border-b border-amber-300 px-1 py-1 text-xs font-semibold text-amber-900 outline-none focus:border-amber-600"
+                            aria-label="Nome do grupo de alternativas"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removerGrupoAlternativas(e.id, grupo.id)
+                            }
+                            className="w-7 h-7 inline-flex items-center justify-center text-amber-600 hover:bg-red-50 hover:text-red-600 rounded"
+                            title="Remover grupo de alternativas"
+                            aria-label="Remover grupo de alternativas"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {(grupo.opcoes || []).map((opcao) => {
+                            const selecionada =
+                              grupo.opcaoAtivaId === opcao.id;
+                            return (
+                              <label
+                                key={opcao.id}
+                                className={`flex items-center gap-1.5 border rounded-md px-2 py-1 ${
+                                  selecionada
+                                    ? "border-emerald-400 bg-emerald-50"
+                                    : "border-stone-200 bg-white"
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name={`alternativa-${grupo.id}`}
+                                  checked={selecionada}
+                                  onChange={() =>
+                                    atualizarGrupoAlternativas(
+                                      e.id,
+                                      grupo.id,
+                                      (atual) => ({
+                                        ...atual,
+                                        opcaoAtivaId: opcao.id,
+                                      })
+                                    )
+                                  }
+                                  className="accent-emerald-600"
+                                />
+                                <input
+                                  value={opcao.nome || ""}
+                                  onChange={(evt) =>
+                                    atualizarGrupoAlternativas(
+                                      e.id,
+                                      grupo.id,
+                                      (atual) => ({
+                                        ...atual,
+                                        opcoes: (atual.opcoes || []).map(
+                                          (item) =>
+                                            item.id === opcao.id
+                                              ? {
+                                                  ...item,
+                                                  nome: evt.target.value,
+                                                }
+                                              : item
+                                        ),
+                                      })
+                                    )
+                                  }
+                                  className="w-32 bg-transparent text-[11px] font-medium outline-none"
+                                  aria-label="Nome da alternativa"
+                                />
+                                {(grupo.opcoes || []).length > 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      removerOpcaoAlternativa(
+                                        e.id,
+                                        grupo.id,
+                                        opcao.id
+                                      )
+                                    }
+                                    className="text-stone-300 hover:text-red-500"
+                                    title="Remover alternativa"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                )}
+                                {selecionada && (
+                                  <span className="text-[9px] font-semibold uppercase text-emerald-700">
+                                    No total
+                                  </span>
+                                )}
+                              </label>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              adicionarOpcaoAlternativa(e.id, grupo.id)
+                            }
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] text-stone-500 hover:text-stone-900"
+                          >
+                            <Plus size={11} /> Opção
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Campo de busca exclusivo DESTA ETAPA - LARGURA TOTAL */}
                 <div className="relative w-full mb-3">
                   <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
@@ -4384,9 +4900,23 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                 )}
                 {e.itens.map((it, itemIndex) => {
                   const estaExpandido = !!itensExpandidos[it.id]; // Por padrão, undefined avalia como falso (recolhido)
+                  const grupoDoItem = grupoAlternativaDoItem(e, it);
+                  const opcaoDoItem = (grupoDoItem?.opcoes || []).find(
+                    (opcao) => opcao.id === it.alternativaOpcaoId
+                  );
+                  const itemAtivo = itemIncluidoNoCalculo(e, it);
 
                   return (
-                    <div key={it.id} className="border border-stone-100 rounded-lg p-3 bg-stone-50/30">
+                    <div
+                      key={it.id}
+                      className={`border rounded-lg p-3 ${
+                        grupoDoItem
+                          ? itemAtivo
+                            ? "border-emerald-200 bg-emerald-50/20"
+                            : "border-stone-200 bg-stone-100/60 opacity-65"
+                          : "border-stone-100 bg-stone-50/30"
+                      }`}
+                    >
                       {/* Cabeçalho do item - Clicável para expandir/recolher */}
                       <div className="flex flex-wrap items-center justify-between gap-3 mb-1 pb-1">
                         <div 
@@ -4406,6 +4936,56 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                         </div>
                         
                         <div className="flex flex-wrap items-center justify-end gap-3 text-xs">
+                          {gruposAlternativas.length > 0 && (
+                            <select
+                              value={
+                                grupoDoItem && opcaoDoItem
+                                  ? `${grupoDoItem.id}|${opcaoDoItem.id}`
+                                  : ""
+                              }
+                              onChange={(evt) =>
+                                vincularItemAlternativa(
+                                  e.id,
+                                  it.id,
+                                  evt.target.value
+                                )
+                              }
+                              className={`max-w-52 h-7 px-2 border rounded-md bg-white text-[10px] outline-none ${
+                                grupoDoItem
+                                  ? itemAtivo
+                                    ? "border-emerald-300 text-emerald-800"
+                                    : "border-stone-300 text-stone-500"
+                                  : "border-stone-200 text-stone-500"
+                              }`}
+                              title="Classificar CPU como serviço comum ou alternativa"
+                              aria-label={`Classificação de ${it.servico}`}
+                            >
+                              <option value="">Serviço comum</option>
+                              {gruposAlternativas.map((grupo) => (
+                                <optgroup key={grupo.id} label={grupo.nome}>
+                                  {(grupo.opcoes || []).map((opcao) => (
+                                    <option
+                                      key={opcao.id}
+                                      value={`${grupo.id}|${opcao.id}`}
+                                    >
+                                      {opcao.nome}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                          )}
+                          {grupoDoItem && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase ${
+                                itemAtivo
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-stone-200 text-stone-500"
+                              }`}
+                            >
+                              {itemAtivo ? "Incluída" : "Fora do total"}
+                            </span>
+                          )}
                           {e.itens.length > 1 && (
                             <div className="flex items-center rounded-md border border-stone-200 bg-white overflow-hidden shrink-0">
                               <button
@@ -4681,7 +5261,7 @@ function CronogramaSemanal({
     () =>
       (etapas || []).map((etapa, indice) => {
         const id = etapa.id || `etapa-${indice}`;
-        const totalVenda = (etapa.itens || []).reduce(
+        const totalVenda = itensAtivosDaEtapa(etapa).reduce(
           (soma, item) =>
             soma + itemVendaResumo(item, bdiCalc, cpus, catalogMap, cliente).total,
           0
@@ -5416,7 +5996,7 @@ function PrecoVenda({ etapas, FatorBdi, grandTotal, nomeProjeto, cpus, catalogMa
       ["Etapa", "Serviço", "Qtd.", "Un.", "Custo Unit. (R$)", "Preço Venda Unit. (R$)", "Total Venda (R$)"],
     ];
     (etapas || []).forEach((e) => {
-      (e.itens || []).forEach((it) => {
+      itensAtivosDaEtapa(e).forEach((it) => {
         const uCusto = cpuValorUnit(it.insumos, cpus, catalogMap);
         rows.push([e.nome, it.servico, num(it.quantidade), it.unidade, uCusto, uCusto * FatorBdi, num(it.quantidade) * uCusto * FatorBdi]);
       });
@@ -5439,7 +6019,8 @@ function PrecoVenda({ etapas, FatorBdi, grandTotal, nomeProjeto, cpus, catalogMa
       </div>
       <div className="space-y-3">
         {etapas.map((e) => {
-          const custoEtapa = e.itens.reduce((s, it) => s + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap), 0);
+          const itensAtivos = itensAtivosDaEtapa(e);
+          const custoEtapa = itensAtivos.reduce((s, it) => s + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap), 0);
           return (
             <div key={e.id} className="border border-stone-100 rounded-lg overflow-hidden">
               <div className="bg-stone-50/50 px-4 py-2 flex justify-between text-xs font-semibold text-stone-700">
@@ -5447,7 +6028,7 @@ function PrecoVenda({ etapas, FatorBdi, grandTotal, nomeProjeto, cpus, catalogMa
                 <span className="font-mono">R$ {fmt(custoEtapa * FatorBdi)}</span>
               </div>
               <div className="divide-y divide-stone-50">
-                {e.itens.map((it) => {
+                {itensAtivos.map((it) => {
                   const uCusto = cpuValorUnit(it.insumos, cpus, catalogMap);
                   const totalVendaItem = num(it.quantidade) * (uCusto * FatorBdi);
                   return (

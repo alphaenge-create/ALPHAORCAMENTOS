@@ -1,4 +1,5 @@
 import { findSubCpu, precoKey } from "./calculos";
+import { itensAtivosDaEtapa } from "./alternativas";
 import { norm, num } from "./format";
 
 const ehMaoDeObra = (insumo) => {
@@ -86,7 +87,7 @@ export const calcularMaoDeObraPorEtapa = (
 ) =>
   (etapas || []).map((etapa, indice) => {
     const profissionais = new Map();
-    (etapa.itens || []).forEach((item) => {
+    itensAtivosDaEtapa(etapa).forEach((item) => {
       coletarMaoDeObra(
         item.insumos,
         num(item.quantidade),
