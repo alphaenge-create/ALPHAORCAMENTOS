@@ -1,4 +1,4 @@
-import { norm, num } from "./format";
+import { norm, normalizarBusca, num } from "./format.js";
 
 export const precoKey = (descricao) => norm(descricao);
 
@@ -43,6 +43,49 @@ export const findSubCpu = (insumo, cpusArray = []) => {
     (codigo ? lookup.get(`codigo:${codigo}`) : null) ||
     null
   );
+};
+
+export const criarIndiceBuscaCpus = (cpusArray = []) => {
+  const memo = new Map();
+  const emProcessamento = new Set();
+
+  const textoDaCpu = (cpu) => {
+    if (!cpu) return "";
+    const chave = cpu.id || cpu;
+    if (memo.has(chave)) return memo.get(chave);
+
+    const textoProprio = [
+      cpu.codigo,
+      cpu.descricao,
+      cpu.fonte,
+      ...(cpu.insumos || []).flatMap((insumo) => [
+        insumo.codigo,
+        insumo.descricao,
+        insumo.tipo,
+        insumo.unidade,
+      ]),
+    ];
+
+    if (emProcessamento.has(chave)) {
+      return normalizarBusca(textoProprio.filter(Boolean).join(" "));
+    }
+
+    emProcessamento.add(chave);
+    (cpu.insumos || []).forEach((insumo) => {
+      const subCpu = findSubCpu(insumo, cpusArray);
+      if (subCpu) textoProprio.push(textoDaCpu(subCpu));
+    });
+    emProcessamento.delete(chave);
+
+    const texto = normalizarBusca(textoProprio.filter(Boolean).join(" "));
+    memo.set(chave, texto);
+    return texto;
+  };
+
+  return (cpusArray || []).map((cpu) => ({
+    cpu,
+    haystack: textoDaCpu(cpu),
+  }));
 };
 
 export const insumoValorUnitario = (insumo, cpusArray = [], catMap = null, visited = new Set()) => {

@@ -11,12 +11,20 @@ import { FONTES_PADRAO, TIPOS, createDefaultProject, seedCpus } from "./data/def
 import {
   applyCatalogToInsumos,
   buildCatalog,
+  criarIndiceBuscaCpus,
   cpuValorUnit,
   findSubCpu,
   insumoValorUnitario,
   precoKey,
 } from "./utils/calculos";
-import { avaliarExpressaoNumerica, fmt, norm, num, uid } from "./utils/format";
+import {
+  avaliarExpressaoNumerica,
+  fmt,
+  norm,
+  normalizarBusca,
+  num,
+  uid,
+} from "./utils/format";
 import { consolidarMaoDeObra } from "./utils/maoObra";
 import {
   deleteGoogleDriveProject,
@@ -2492,13 +2500,7 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
   );
 
   const cpuSearchIndex = useMemo(
-    () =>
-      cpus.map((c) => ({
-        cpu: c,
-        haystack: norm(
-          `${c.codigo || ""} ${c.descricao || ""} ${c.fonte || ""} ${(c.insumos || []).map((i) => i.descricao).join(" ")}`
-        ),
-      })),
+    () => criarIndiceBuscaCpus(cpus),
     [cpus]
   );
 
@@ -2507,7 +2509,7 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
     const re = /"([^"]+)"|(\S+)/g;
     let m;
     while ((m = re.exec(query)) !== null) {
-      const t = norm((m[1] || m[2] || "").trim());
+      const t = normalizarBusca((m[1] || m[2] || "").trim());
       if (t) tokens.push(t);
     }
     return tokens;
@@ -3227,9 +3229,9 @@ function PrecosTab({
 
   const filtered = useMemo(() => {
     // Divide o texto digitado por espaços e remove itens vazios
-    const searchTerms = norm(query).split(/\s+/).filter(Boolean);
+    const searchTerms = normalizarBusca(query).split(/\s+/).filter(Boolean);
     const base = catalog.filter((c) => {
-      const targetText = norm(c.descricao);
+      const targetText = normalizarBusca(c.descricao);
 
       // Verifica se TODAS as palavras buscadas estão presentes na descrição do insumo
       return searchTerms.every((term) => targetText.includes(term));
@@ -3544,11 +3546,7 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
   const [etapasRecolhidas, setEtapasRecolhidas] = useState({});
 
   const cpuSearchIndex = useMemo(
-    () =>
-      cpus.map((c) => ({
-        cpu: c,
-        haystack: norm(`${c.codigo || ""} ${c.descricao || ""}`),
-      })),
+    () => criarIndiceBuscaCpus(cpus),
     [cpus]
   );
 
@@ -3676,7 +3674,7 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
 
   const obterCpusFiltradas = (textoBusca) => {
     if (!textoBusca || !textoBusca.trim()) return [];
-    const searchTerms = norm(textoBusca).split(/\s+/).filter(Boolean);
+    const searchTerms = normalizarBusca(textoBusca).split(/\s+/).filter(Boolean);
     const result = [];
     for (const item of cpuSearchIndex) {
       if (searchTerms.every((term) => item.haystack.includes(term))) {
