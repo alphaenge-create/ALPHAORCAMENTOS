@@ -697,6 +697,8 @@ export default function App() {
   const [filtroStatusProjetos, setFiltroStatusProjetos] = useState("todos");
   const [ordenacaoProjetos, setOrdenacaoProjetos] = useState("recentes");
   const [paginaProjetos, setPaginaProjetos] = useState(1);
+  const [projetoParaExcluir, setProjetoParaExcluir] = useState(null);
+  const [textoConfirmacaoExclusao, setTextoConfirmacaoExclusao] = useState("");
 
   dadosAtuaisRef.current = { cpus, projetos, projetoAtivoId };
 
@@ -1073,13 +1075,23 @@ export default function App() {
     setPrecos((prev) => prev.filter((p) => precoKey(p.descricao) !== key));
   };
 
-  const removerProjeto = async (project) => {
+  const solicitarExclusaoProjeto = (project) => {
     if (projetos.length <= 1) {
       alert("Não é possível apagar todos os orçamentos.");
       return;
     }
-    if (!window.confirm(`Tem certeza que deseja apagar o orçamento "${project.nome}"?`)) return;
+    setProjetoParaExcluir(project);
+    setTextoConfirmacaoExclusao("");
+  };
 
+  const fecharConfirmacaoExclusao = () => {
+    if (busy) return;
+    setProjetoParaExcluir(null);
+    setTextoConfirmacaoExclusao("");
+  };
+
+  const removerProjeto = async (project) => {
+    if (!project || projetos.length <= 1) return;
     setBusy(true);
     setStatus(`Excluindo o orçamento "${project.nome}"...`);
     try {
@@ -1098,6 +1110,8 @@ export default function App() {
         projetoAtivoId: nextActiveId,
       });
       setStatus("Orçamento excluído do Google Drive.");
+      setProjetoParaExcluir(null);
+      setTextoConfirmacaoExclusao("");
     } catch (error) {
       setStatus("Falha ao excluir o orçamento: " + (error?.message || error));
     } finally {
@@ -1346,6 +1360,85 @@ export default function App() {
                 {status}
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {projetoParaExcluir && (
+        <div
+          className="fixed inset-0 z-[95] bg-stone-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirmar-exclusao-title"
+        >
+          <div className="w-full max-w-md bg-white border border-stone-200 rounded-lg shadow-2xl p-6">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 shrink-0 rounded-md bg-red-50 text-red-600 flex items-center justify-center">
+                <Trash2 size={19} />
+              </div>
+              <div className="min-w-0">
+                <h2
+                  id="confirmar-exclusao-title"
+                  className="text-base font-semibold text-stone-900"
+                >
+                  Excluir orçamento?
+                </h2>
+                <p className="mt-1.5 text-sm text-stone-500">
+                  Esta ação excluirá permanentemente o orçamento do Google Drive.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 p-3 bg-stone-50 border border-stone-200 rounded-md">
+              <p className="text-[10px] font-semibold uppercase text-stone-400">
+                Orçamento selecionado
+              </p>
+              <p className="mt-1 text-sm font-semibold text-stone-800 uppercase break-words">
+                {projetoParaExcluir.nome || "Orçamento sem nome"}
+              </p>
+            </div>
+
+            <label className="block mt-5 text-sm text-stone-600">
+              Digite <strong className="text-stone-900">EXCLUIR</strong> para
+              confirmar:
+              <input
+                type="text"
+                value={textoConfirmacaoExclusao}
+                onChange={(e) => setTextoConfirmacaoExclusao(e.target.value)}
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                className="mt-2 w-full h-10 px-3 text-sm uppercase border border-stone-300 rounded-md outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                placeholder="EXCLUIR"
+              />
+            </label>
+
+            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+              <button
+                type="button"
+                onClick={fecharConfirmacaoExclusao}
+                disabled={busy}
+                className="px-4 py-2 text-sm border border-stone-300 rounded-md bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => removerProjeto(projetoParaExcluir)}
+                disabled={
+                  busy ||
+                  normalizarBusca(textoConfirmacaoExclusao) !== "excluir"
+                }
+                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {busy ? (
+                  <RefreshCw size={15} className="animate-spin" />
+                ) : (
+                  <Trash2 size={15} />
+                )}
+                {busy ? "Excluindo..." : "Excluir definitivamente"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1734,7 +1827,7 @@ export default function App() {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  removerProjeto(projeto);
+                                  solicitarExclusaoProjeto(projeto);
                                 }}
                                 disabled={busy}
                                 className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
@@ -1852,7 +1945,7 @@ export default function App() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => removerProjeto(projeto)}
+                                onClick={() => solicitarExclusaoProjeto(projeto)}
                                 disabled={busy}
                                 className="w-9 h-9 inline-flex items-center justify-center border border-stone-300 rounded-md bg-white text-stone-500 disabled:opacity-50"
                                 title={`Excluir o orçamento ${projeto.nome}`}
