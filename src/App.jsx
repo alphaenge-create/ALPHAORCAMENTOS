@@ -1474,6 +1474,21 @@ export default function App() {
     setTab(clienteEstaCompleto(cliente) ? "custo" : "cliente");
   };
 
+  const atualizarStatusProjeto = (projectId, novoStatus) => {
+    const statusPermitidos = ["rascunho", "em_elaboracao", "concluido"];
+    if (!statusPermitidos.includes(novoStatus)) return;
+
+    setProjetos((prev) =>
+      prev.map((projeto) =>
+        projeto.id === projectId
+          ? { ...projeto, status: novoStatus }
+          : projeto
+      )
+    );
+    setStatus("Status alterado. Clique no botão de salvar deste orçamento para gravar no Google Drive.");
+    setTimeout(() => setStatus(""), 8000);
+  };
+
   // Abas disponíveis apenas dentro de um projeto ativo
   const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "cronograma", "histograma", "maoobra", "materiais", "precos"];
   const tabEhDeProjeto = abasProjeto.includes(tab);
@@ -1946,11 +1961,28 @@ export default function App() {
                               {formatarAtualizacaoProjeto(projeto.atualizadoEm)}
                             </div>
                             <div>
-                              <span
-                                className={`inline-flex px-2 py-1 rounded border text-[10px] font-medium whitespace-nowrap ${statusProjeto.className}`}
+                              <select
+                                value={statusProjeto.id}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  atualizarStatusProjeto(projeto.id, e.target.value);
+                                }}
+                                disabled={statusProjeto.id === "cadastro_pendente"}
+                                aria-label={`Alterar status do orçamento ${projeto.nome}`}
+                                className={`w-full h-8 px-2 rounded border text-[10px] font-medium outline-none disabled:cursor-not-allowed ${statusProjeto.className}`}
                               >
-                                {statusProjeto.label}
-                              </span>
+                                {statusProjeto.id === "cadastro_pendente" ? (
+                                  <option value="cadastro_pendente">Cadastro pendente</option>
+                                ) : (
+                                  <>
+                                    <option value="rascunho">Rascunho</option>
+                                    <option value="em_elaboracao">Em elaboração</option>
+                                    <option value="concluido">Concluído</option>
+                                  </>
+                                )}
+                              </select>
                             </div>
                             <div className="flex justify-end gap-1.5">
                               <button
@@ -2015,12 +2047,12 @@ export default function App() {
                               : "border-l-transparent"
                           }`}
                         >
-                          <button
-                            type="button"
-                            onClick={() => abrirProjetoDaLista(projeto, cliente)}
-                            className="w-full text-left"
-                          >
-                            <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <button
+                              type="button"
+                              onClick={() => abrirProjetoDaLista(projeto, cliente)}
+                              className="min-w-0 flex-1 text-left"
+                            >
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-stone-900 uppercase truncate">
                                   {projeto.nome || "Orçamento sem nome"}
@@ -2035,13 +2067,27 @@ export default function App() {
                                   </span>
                                 </p>
                               </div>
-                              <span
-                                className={`shrink-0 inline-flex px-2 py-1 rounded border text-[10px] font-medium ${statusProjeto.className}`}
-                              >
-                                {statusProjeto.label}
-                              </span>
-                            </div>
-                          </button>
+                            </button>
+                            <select
+                              value={statusProjeto.id}
+                              onChange={(e) =>
+                                atualizarStatusProjeto(projeto.id, e.target.value)
+                              }
+                              disabled={statusProjeto.id === "cadastro_pendente"}
+                              aria-label={`Alterar status do orçamento ${projeto.nome}`}
+                              className={`shrink-0 max-w-36 h-8 px-2 rounded border text-[10px] font-medium outline-none disabled:cursor-not-allowed ${statusProjeto.className}`}
+                            >
+                              {statusProjeto.id === "cadastro_pendente" ? (
+                                <option value="cadastro_pendente">Cadastro pendente</option>
+                              ) : (
+                                <>
+                                  <option value="rascunho">Rascunho</option>
+                                  <option value="em_elaboracao">Em elaboração</option>
+                                  <option value="concluido">Concluído</option>
+                                </>
+                              )}
+                            </select>
+                          </div>
 
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-stone-200/70">
                             <div>
