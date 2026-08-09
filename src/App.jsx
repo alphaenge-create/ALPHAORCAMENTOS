@@ -1558,7 +1558,15 @@ export default function App() {
   };
 
   const atualizarStatusProjeto = (projectId, novoStatus) => {
-    const statusPermitidos = ["rascunho", "em_elaboracao", "concluido"];
+    const statusPermitidos = [
+      "rascunho",
+      "em_elaboracao",
+      "enviado_cliente",
+      "aprovado",
+      "reprovado",
+      "cancelado",
+      "concluido",
+    ];
     if (!statusPermitidos.includes(novoStatus)) return;
 
     setProjetos((prev) =>
