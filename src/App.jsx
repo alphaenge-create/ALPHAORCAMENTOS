@@ -139,7 +139,7 @@ const obterStatusProjeto = (projeto) => {
     return {
       id: "enviado_cliente",
       label: "Enviado p/ cliente",
-      className: "border-sky-200 bg-sky-50 text-sky-700",
+      className: "border-amber-400 bg-amber-300 text-amber-950",
     };
   }
   if (status === "cancelado") {
@@ -2014,6 +2014,7 @@ export default function App() {
                           statusProjeto,
                         } = resumo;
                         const isActive = projeto.id === projetoAtivoId;
+                        const isSentToClient = statusProjeto.id === "enviado_cliente";
 
                         return (
                           <div
@@ -2028,7 +2029,9 @@ export default function App() {
                               }
                             }}
                             className={`grid grid-cols-[minmax(145px,1.2fr)_minmax(165px,1.3fr)_50px_105px_115px_80px_105px_108px] gap-3 px-5 py-4 border-b border-stone-200 last:border-b-0 items-center cursor-pointer outline-none transition-colors border-l-4 ${
-                              isActive
+                              isSentToClient
+                                ? "border-l-amber-600 bg-yellow-300 hover:bg-yellow-200 focus:bg-yellow-200"
+                                : isActive
                                 ? "border-l-[#6f9255] bg-[#f3f7ef]"
                                 : "border-l-transparent hover:bg-stone-50 focus:bg-stone-50"
                             }`}
@@ -2145,12 +2148,15 @@ export default function App() {
                         statusProjeto,
                       } = resumo;
                       const isActive = projeto.id === projetoAtivoId;
+                      const isSentToClient = statusProjeto.id === "enviado_cliente";
 
                       return (
                         <div
                           key={projeto.id}
                           className={`p-4 border-b border-stone-200 last:border-b-0 border-l-4 ${
-                            isActive
+                            isSentToClient
+                              ? "border-l-amber-600 bg-yellow-300"
+                              : isActive
                               ? "border-l-[#6f9255] bg-[#f3f7ef]"
                               : "border-l-transparent"
                           }`}
