@@ -999,7 +999,9 @@ export default function App() {
   };
 
   const salvarProjeto = async (projectId) => {
-    const projectInicial = projetos.find((item) => item.id === projectId);
+    const projectInicial = dadosAtuaisRef.current.projetos.find(
+      (item) => item.id === projectId
+    );
     if (!projectInicial) return false;
 
     setBusy(true);
@@ -1557,7 +1559,7 @@ export default function App() {
     setTab(clienteEstaCompleto(cliente) ? "custo" : "cliente");
   };
 
-  const atualizarStatusProjeto = (projectId, novoStatus) => {
+  const atualizarStatusProjeto = async (projectId, novoStatus) => {
     const statusPermitidos = [
       "rascunho",
       "em_elaboracao",
@@ -1569,15 +1571,19 @@ export default function App() {
     ];
     if (!statusPermitidos.includes(novoStatus)) return;
 
-    setProjetos((prev) =>
-      prev.map((projeto) =>
-        projeto.id === projectId
-          ? { ...projeto, status: novoStatus }
-          : projeto
-      )
+    const dadosAtuais = dadosAtuaisRef.current;
+    const projetosAtualizados = dadosAtuais.projetos.map((projeto) =>
+      projeto.id === projectId
+        ? { ...projeto, status: novoStatus }
+        : projeto
     );
-    setStatus("Status alterado. Clique no botão de salvar deste orçamento para gravar no Google Drive.");
-    setTimeout(() => setStatus(""), 8000);
+    dadosAtuaisRef.current = {
+      ...dadosAtuais,
+      projetos: projetosAtualizados,
+    };
+    setProjetos(projetosAtualizados);
+    setStatus("Status alterado. Salvando automaticamente no Google Drive...");
+    await salvarProjeto(projectId);
   };
 
   // Abas disponíveis apenas dentro de um projeto ativo
@@ -2067,7 +2073,7 @@ export default function App() {
                                   e.stopPropagation();
                                   atualizarStatusProjeto(projeto.id, e.target.value);
                                 }}
-                                disabled={statusProjeto.id === "cadastro_pendente"}
+                                disabled={busy || statusProjeto.id === "cadastro_pendente"}
                                 aria-label={`Alterar status do orçamento ${projeto.nome}`}
                                 className={`w-full h-8 px-2 rounded border text-[10px] font-medium outline-none disabled:cursor-not-allowed ${statusProjeto.className}`}
                               >
@@ -2175,7 +2181,7 @@ export default function App() {
                               onChange={(e) =>
                                 atualizarStatusProjeto(projeto.id, e.target.value)
                               }
-                              disabled={statusProjeto.id === "cadastro_pendente"}
+                              disabled={busy || statusProjeto.id === "cadastro_pendente"}
                               aria-label={`Alterar status do orçamento ${projeto.nome}`}
                               className={`shrink-0 max-w-36 h-8 px-2 rounded border text-[10px] font-medium outline-none disabled:cursor-not-allowed ${statusProjeto.className}`}
                             >
