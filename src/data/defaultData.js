@@ -67,6 +67,9 @@ export const createDefaultProject = () => {
       dasAnexoIV: 0.13,
       art: 0,
       lucro: 0.42,
+      collemAtivo: false,
+      collemX: 1,
+      collemY: 1,
     },
   };
 };

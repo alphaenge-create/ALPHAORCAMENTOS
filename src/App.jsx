@@ -56,6 +56,9 @@ const BDI_PADRAO = {
   dasAnexoIV: 0.13,
   art: 0,
   lucro: 0.42,
+  collemAtivo: false,
+  collemX: 1,
+  collemY: 1,
 };
 
 const CLIENTE_PADRAO = {
@@ -748,15 +751,22 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
     return denominador <= 0 ? 1 : numerador / denominador;
   };
 
-  const FatorBdiGeral = calcularFatorBdiQualquer(bdi || BDI_PADRAO);
+  const FatorBdiGeralBase = calcularFatorBdiQualquer(bdi || BDI_PADRAO);
   const faturamentoDireto = !!bdi?.faturamentoDireto;
-  const FatorBdiMateriais =
+  const FatorBdiMateriaisBase =
     faturamentoDireto && bdi?.materiais
       ? calcularFatorBdiQualquer(bdi.materiais)
-      : FatorBdiGeral;
+      : FatorBdiGeralBase;
+  const collemAtivo = !!bdi?.collemAtivo;
+  const collemX = num(bdi?.collemX) > 0 ? num(bdi.collemX) : 1;
+  const collemY = num(bdi?.collemY) > 0 ? num(bdi.collemY) : 1;
+  const divisorCollem = collemAtivo ? collemX * collemY : 1;
+  const FatorBdiGeral = FatorBdiGeralBase / divisorCollem;
+  const FatorBdiMateriais = FatorBdiMateriaisBase / divisorCollem;
 
   let totalCustoDireto = 0;
   let totalPrecoVenda = 0;
+  let totalPrecoVendaBase = 0;
 
   (etapas || []).forEach((e) => {
     itensAtivosDaEtapa(e).forEach((it) => {
@@ -767,26 +777,35 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
         totalCustoDireto += custoInsumoTotal;
 
         if (faturamentoDireto && (tipo === "MAT" || tipo === "MATERIAL" || (!tipo.includes("MO") && !tipo.includes("MÃO") && !tipo.includes("MAO") && !tipo.includes("EQUIP")))) {
+          totalPrecoVendaBase += custoInsumoTotal * FatorBdiMateriaisBase;
           totalPrecoVenda += custoInsumoTotal * FatorBdiMateriais;
         } else {
+          totalPrecoVendaBase += custoInsumoTotal * FatorBdiGeralBase;
           totalPrecoVenda += custoInsumoTotal * FatorBdiGeral;
         }
       });
     });
   });
 
-  const totalDiValor = Math.max(0, totalPrecoVenda - totalCustoDireto);
+  const totalDiValor = totalPrecoVenda - totalCustoDireto;
   const totalDiRate = totalCustoDireto > 0 ? totalDiValor / totalCustoDireto : 0;
 
   return {
-    bdiRate: FatorBdiGeral - 1,
-    bdiRateMateriais: FatorBdiMateriais - 1,
+    bdiRate: FatorBdiGeralBase - 1,
+    bdiRateMateriais: FatorBdiMateriaisBase - 1,
     FatorBdi: FatorBdiGeral,
     FatorBdiMateriais,
+    FatorBdiBase: FatorBdiGeralBase,
+    FatorBdiMateriaisBase,
     faturamentoDireto,
+    collemAtivo,
+    collemX,
+    collemY,
+    divisorCollem,
     totalDiValor,
     totalDiRate,
     custoDireto: totalCustoDireto,
+    valorVendaBase: totalPrecoVendaBase,
     valorVenda: totalPrecoVenda,
   };
 };
@@ -1814,6 +1833,9 @@ export default function App() {
                         art: 0,
                         lucro: 0,
                         faturamentoDireto: false,
+                        collemAtivo: false,
+                        collemX: 1,
+                        collemY: 1,
                         materiais: { admCentral: 0, contabilidade: 0, contingenciamento: 0, custoFinanceiro: 0, lucro: 0, dasAnexoIV: 0, art: 0 }
                       }
                     }
@@ -2449,7 +2471,8 @@ export default function App() {
               <div>
                 <h2 className="text-base font-semibold text-stone-800">Planilha de Preço de Venda (Custo + BDI)</h2>
                 <p className="text-xs text-stone-500">
-                  Visualização hierárquica por Etapa / CPU / Insumos aplicando BDI Geral de {fmt(bdiCalc.bdiRate * 100)}% {bdiCalc.faturamentoDireto && `e BDI de Materiais de ${fmt(bdiCalc.bdiRateMateriais * 100)}%`}. Valor Comercial Fechado: <span className="font-bold text-stone-800 font-mono">R$ {fmt(bdiCalc.valorVenda)}</span>
+                  Visualização hierárquica por Etapa / CPU / Insumos aplicando BDI Geral de {fmt(bdiCalc.bdiRate * 100)}% {bdiCalc.faturamentoDireto && `e BDI de Materiais de ${fmt(bdiCalc.bdiRateMateriais * 100)}%`}
+                  {bdiCalc.collemAtivo && <> e condição COLLEM ÷ {fmt(bdiCalc.collemX)} ÷ {fmt(bdiCalc.collemY)}</>}. Valor Comercial Fechado: <span className="font-bold text-stone-800 font-mono">R$ {fmt(bdiCalc.valorVenda)}</span>
                 </p>
               </div>
               <div className="flex gap-2">
@@ -5094,6 +5117,9 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
 /* ---------------- ABA PLANILHA DE BDI ---------------- */
 function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
   const faturamentoDireto = !!bdi.faturamentoDireto;
+  const collemAtivo = !!bdi.collemAtivo;
+  const collemX = bdi.collemX === "" ? "" : (bdi.collemX ?? 1);
+  const collemY = bdi.collemY === "" ? "" : (bdi.collemY ?? 1);
 
   // Inicializa taxas de materiais se não existirem
   const bdiMats = bdi.materiais || {
@@ -5115,6 +5141,15 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
       ...prev,
       materiais: { ...bdiMats, [campo]: valor }
     }));
+  };
+
+  const handleCollemChange = (campo, valor) => {
+    setBdi(prev => ({ ...prev, [campo]: valor }));
+  };
+
+  const normalizarDivisorCollem = (campo, valor) => {
+    if (num(valor) > 0) return;
+    setBdi(prev => ({ ...prev, [campo]: 1 }));
   };
 
   // Função auxiliar para calcular taxas somadas ou BDI para o painel resumo
@@ -5153,6 +5188,62 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
           />
           Habilitar Faturamento Direto (BDI Diferenciado para Materiais)
         </label>
+      </div>
+
+      <div className={`border rounded-lg p-4 transition-colors ${collemAtivo ? "border-amber-300 bg-amber-50/60" : "border-stone-200 bg-white"}`}>
+        <div className="flex justify-between items-start flex-wrap gap-3">
+          <div>
+            <h3 className="font-semibold text-sm text-stone-800">Condição comercial COLLEM</h3>
+            <p className="text-xs text-stone-500">Aplica os divisores X e Y sobre o preço de venda calculado com BDI.</p>
+          </div>
+          <label className="flex items-center gap-2 bg-white border border-stone-200 px-3 py-1.5 rounded-md cursor-pointer select-none hover:bg-stone-50 text-xs font-semibold text-stone-700">
+            <input
+              type="checkbox"
+              checked={collemAtivo}
+              onChange={(e) => setBdi(prev => ({
+                ...prev,
+                collemAtivo: e.target.checked,
+                collemX: num(prev.collemX) > 0 ? prev.collemX : 1,
+                collemY: num(prev.collemY) > 0 ? prev.collemY : 1,
+              }))}
+              className="w-4 h-4 accent-amber-600 rounded"
+            />
+            Ativar COLLEM
+          </label>
+        </div>
+
+        {collemAtivo && (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-[minmax(120px,180px)_minmax(120px,180px)_1fr] gap-3 items-end">
+            <label className="text-xs text-stone-600">
+              <span className="block mb-1 font-medium">Divisor X</span>
+              <input
+                type="number"
+                min="0.000001"
+                step="any"
+                value={collemX}
+                onChange={(e) => handleCollemChange("collemX", e.target.value)}
+                onBlur={(e) => normalizarDivisorCollem("collemX", e.target.value)}
+                className="w-full h-9 border border-amber-300 rounded-md px-2.5 bg-white text-sm font-mono outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </label>
+            <label className="text-xs text-stone-600">
+              <span className="block mb-1 font-medium">Divisor Y</span>
+              <input
+                type="number"
+                min="0.000001"
+                step="any"
+                value={collemY}
+                onChange={(e) => handleCollemChange("collemY", e.target.value)}
+                onBlur={(e) => normalizarDivisorCollem("collemY", e.target.value)}
+                className="w-full h-9 border border-amber-300 rounded-md px-2.5 bg-white text-sm font-mono outline-none focus:ring-1 focus:ring-amber-500"
+              />
+            </label>
+            <div className="min-h-9 rounded-md border border-amber-200 bg-white px-3 py-2 text-xs text-stone-600">
+              <span className="font-mono">R$ {fmt(bdiCalc.valorVendaBase)} ÷ {fmt(bdiCalc.collemX)} ÷ {fmt(bdiCalc.collemY)}</span>
+              <span className="font-semibold text-stone-900 ml-2">= R$ {fmt(bdiCalc.valorVenda)}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -5230,14 +5321,26 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
                   <span className="font-mono text-emerald-300">{fmt(bdiCalc.bdiRateMateriais * 100)}%</span>
                 </div>
               )}
+              {collemAtivo && (
+                <>
+                  <div className="flex justify-between border-t border-stone-800 pt-2">
+                    <span className="text-stone-400">Venda antes do COLLEM:</span>
+                    <span className="font-mono">R$ {fmt(bdiCalc.valorVendaBase)}</span>
+                  </div>
+                  <div className="flex justify-between text-amber-300">
+                    <span>Divisores COLLEM:</span>
+                    <span className="font-mono">÷ {fmt(bdiCalc.collemX)} ÷ {fmt(bdiCalc.collemY)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between border-t border-stone-800 pt-2">
-                <span className="text-stone-400">Total BDI (Rateio):</span>
+                <span className="text-stone-400">{collemAtivo ? "Resultado sobre o custo:" : "Total BDI (Rateio):"}</span>
                 <span className="font-mono">R$ {fmt(bdiCalc.totalDiValor)}</span>
               </div>
             </div>
           </div>
           <div className="mt-6 pt-4 border-t border-stone-800 text-right">
-            <span className="text-[10px] text-stone-400 block uppercase font-medium">Preço Final de Venda</span>
+            <span className="text-[10px] text-stone-400 block uppercase font-medium">{collemAtivo ? "Preço Final de Venda com COLLEM" : "Preço Final de Venda"}</span>
             <span className="text-2xl font-bold font-mono text-white">R$ {fmt(bdiCalc.valorVenda)}</span>
           </div>
         </div>
