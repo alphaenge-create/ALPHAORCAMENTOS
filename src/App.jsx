@@ -237,6 +237,15 @@ const insumoEhMaterial = (tipo) => {
   return t === "MAT" || t === "MATERIAL" || (!t.includes("MO") && !t.includes("MÃO") && !t.includes("MAO") && !t.includes("EQUIP"));
 };
 
+const insumoComFaturamentoDireto = (insumo, configuracao = {}, cliente = {}) => {
+  if (!insumoEhMaterial(insumo?.tipo)) return false;
+  if (!configuracao?.faturamentoDireto && !materialFaturamentoDireto(cliente)) return false;
+
+  const selecionados = configuracao?.materiaisFaturamentoDireto;
+  if (!Array.isArray(selecionados)) return true;
+  return selecionados.includes(precoKey(insumo?.descricao));
+};
+
 const nomeArquivoSeguro = (valor) =>
   String(valor || "Orcamento")
     .normalize("NFD")
@@ -262,9 +271,7 @@ const itemVendaResumo = (item, bdiCalc, cpus, catalogMap, cliente = {}) => {
     if (materialPorContaCliente(cliente) && isMaterial) return;
 
     const custoBase = num(ins.coeficiente) * quantidade * insumoValorUnitario(ins, cpus, catalogMap);
-    const isMat =
-      isMaterial &&
-      (bdiCalc.faturamentoDireto || materialFaturamentoDireto(cliente));
+    const isMat = isMaterial && insumoComFaturamentoDireto(ins, bdiCalc, cliente);
     total += custoBase * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
   });
 
@@ -514,8 +521,10 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
   const responsabilidadesCliente = listaTextoOuPadrao(cliente?.responsabilidadesCliente, RESPONSABILIDADES_CLIENTE_PADRAO);
   const descricaoRegimeMateriais = materialPorContaCliente(cliente)
     ? "Material por conta do cliente. A proposta considera somente os serviços, mão de obra, equipamentos e demais custos não classificados como material."
-    : materialFaturamentoDireto(cliente)
-      ? "Materiais considerados com faturamento direto para o cliente, aplicando BDI específico de materiais quando configurado."
+    : materialFaturamentoDireto(cliente) || bdiCalc.faturamentoDireto
+      ? Array.isArray(bdiCalc.materiaisFaturamentoDireto)
+        ? "Somente os materiais selecionados no orçamento são considerados com faturamento direto para o cliente, aplicando o BDI específico configurado."
+        : "Materiais considerados com faturamento direto para o cliente, aplicando BDI específico de materiais quando configurado."
       : "Materiais inclusos no fornecimento da ALPHA ENGENHARIA conforme composição do orçamento.";
 
   const linhasEscopo = grupos
@@ -753,6 +762,9 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
 
   const FatorBdiGeralBase = calcularFatorBdiQualquer(bdi || BDI_PADRAO);
   const faturamentoDireto = !!bdi?.faturamentoDireto;
+  const materiaisFaturamentoDireto = Array.isArray(bdi?.materiaisFaturamentoDireto)
+    ? bdi.materiaisFaturamentoDireto
+    : undefined;
   const FatorBdiMateriaisBase =
     faturamentoDireto && bdi?.materiais
       ? calcularFatorBdiQualquer(bdi.materiais)
@@ -772,11 +784,10 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
     itensAtivosDaEtapa(e).forEach((it) => {
       const qtdCpu = num(it.quantidade);
       (it.insumos || []).forEach((ins) => {
-        const tipo = String(ins.tipo || "").toUpperCase().trim();
         const custoInsumoTotal = num(ins.coeficiente) * qtdCpu * insumoValorUnitario(ins, cpus, catalogMap);
         totalCustoDireto += custoInsumoTotal;
 
-        if (faturamentoDireto && (tipo === "MAT" || tipo === "MATERIAL" || (!tipo.includes("MO") && !tipo.includes("MÃO") && !tipo.includes("MAO") && !tipo.includes("EQUIP")))) {
+        if (insumoComFaturamentoDireto(ins, { faturamentoDireto, materiaisFaturamentoDireto })) {
           totalPrecoVendaBase += custoInsumoTotal * FatorBdiMateriaisBase;
           totalPrecoVenda += custoInsumoTotal * FatorBdiMateriais;
         } else {
@@ -798,6 +809,7 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
     FatorBdiBase: FatorBdiGeralBase,
     FatorBdiMateriaisBase,
     faturamentoDireto,
+    materiaisFaturamentoDireto,
     collemAtivo,
     collemX,
     collemY,
@@ -1328,8 +1340,7 @@ export default function App() {
       itensAtivosDaEtapa(etapa).forEach((item) => {
         const qtdItem = num(item.quantidade);
         (item.insumos || []).forEach((insumo) => {
-          // Filtra o que for do tipo "MAT" ou o que NÃƒO for Mão de Obra (MO) ou Equipamento (EQUIP)
-          if (insumo.tipo === "MAT" || (insumo.tipo !== "MO" && insumo.tipo !== "EQUIP" && insumo.unidade?.toLowerCase() !== "h")) {
+          if (insumoEhMaterial(insumo.tipo)) {
             const nomeMat = (insumo.descricao || "").toUpperCase().trim();
             if (!nomeMat) return;
 
@@ -1343,6 +1354,7 @@ export default function App() {
             if (!resumoMAT[nomeMat]) {
               resumoMAT[nomeMat] = {
                 material: insumo.descricao,
+                chave: precoKey(insumo.descricao),
                 unidade: insumo.unidade || "un",
                 quantidade: 0,
                 valorUnitario: precoUnit,
@@ -1357,6 +1369,30 @@ export default function App() {
     });
     return Object.values(resumoMAT).sort((a, b) => b.valorTotal - a.valorTotal); // Ordena do mais caro para o mais barato
   }, [etapas, catalogMap]);
+
+  const chavesMateriaisOrcamento = useMemo(
+    () => processarMateriais.map((material) => material.chave),
+    [processarMateriais]
+  );
+
+  const definirMateriaisFaturamentoDireto = (chaves) => {
+    setBdi((prev) => ({
+      ...prev,
+      materiaisFaturamentoDireto: Array.from(new Set(chaves)),
+    }));
+  };
+
+  const alternarMaterialFaturamentoDireto = (chave, marcado) => {
+    setBdi((prev) => {
+      const atuais = Array.isArray(prev.materiaisFaturamentoDireto)
+        ? prev.materiaisFaturamentoDireto
+        : chavesMateriaisOrcamento;
+      const proximos = new Set(atuais);
+      if (marcado) proximos.add(chave);
+      else proximos.delete(chave);
+      return { ...prev, materiaisFaturamentoDireto: Array.from(proximos) };
+    });
+  };
 
   const grandTotal = useMemo(() => {
     return etapas.reduce(
@@ -2511,9 +2547,8 @@ export default function App() {
                       itensAtivosDaEtapa(etapa).forEach(it => {
                         const qCpu = num(it.quantidade);
                         (it.insumos || []).forEach(ins => {
-                          const tIn = String(ins.tipo || "").toUpperCase().trim();
                           const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
-                          const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
+                          const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
                           totalEtapaVenda += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
                         });
                       });
@@ -2524,18 +2559,16 @@ export default function App() {
                         const numCpu = `${idxE + 1}.${idxI + 1}`;
                         let totalItemVenda = 0;
                         (item.insumos || []).forEach(ins => {
-                          const tIn = String(ins.tipo || "").toUpperCase().trim();
                           const cIn = num(ins.coeficiente) * num(item.quantidade) * insumoValorUnitario(ins, cpus, catalogMap);
-                          const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
+                          const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
                           totalItemVenda += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
                         });
 
                         data.push([numCpu, item.servico || item.descricao, item.unidade, num(item.quantidade), totalItemVenda / num(item.quantidade), totalItemVenda]);
                         
                         (item.insumos || []).forEach((ins, idxIn) => {
-                          const tIn = String(ins.tipo || "").toUpperCase().trim();
                           const custoUnit = insumoValorUnitario(ins, cpus, catalogMap);
-                          const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
+                          const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
                           const fatBdi = isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi;
                           
                           data.push([`${numCpu}.${idxIn + 1}`, `[${ins.tipo}] ${ins.descricao}`, ins.unidade || "un", num(ins.coeficiente) * num(item.quantidade), custoUnit * fatBdi, (num(ins.coeficiente) * num(item.quantidade)) * custoUnit * fatBdi]);
@@ -2712,9 +2745,8 @@ export default function App() {
                     itensAtivosDaEtapa(etapa).forEach(it => {
                       const qCpu = num(it.quantidade);
                       (it.insumos || []).forEach(ins => {
-                        const tIn = String(ins.tipo || "").toUpperCase().trim();
                         const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
-                        const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
+                        const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
                         totalEtapaComBdi += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
                       });
                     });
@@ -2742,9 +2774,8 @@ export default function App() {
 
                           let totalCpuComBdi = 0;
                           (item.insumos || []).forEach(ins => {
-                            const tIn = String(ins.tipo || "").toUpperCase().trim();
                             const cIn = num(ins.coeficiente) * num(ins.valorUnitario);
-                            const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
+                            const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
                             totalCpuComBdi += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
                           });
 
@@ -2770,11 +2801,10 @@ export default function App() {
                                 <div className="bg-stone-50/50 divide-y divide-stone-100/60 border-t border-b border-stone-100">
                                   {(item.insumos || []).map((insumo, idxInsumo) => {
                                     const numInsumo = `${numCpu}.${idxInsumo + 1}`;
-                                    const tIn = String(insumo.tipo || "").toUpperCase().trim();
                                     const entry = catalogMap.get(precoKey(insumo.descricao));
                                     const custoUnit = entry && entry.valorUnitario !== "" ? num(entry.valorUnitario) : num(insumo.valorUnitario);
                                     
-                                    const isMat = bdiCalc.faturamentoDireto && (tIn === "MAT" || tIn === "MATERIAL" || (!tIn.includes("MO") && !tIn.includes("MÃO") && !tIn.includes("MAO") && !tIn.includes("EQUIP")));
+                                    const isMat = insumoComFaturamentoDireto(insumo, bdiCalc);
                                     const precoVendaInsumo = custoUnit * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
                                     
                                     const qtdCalculada = num(insumo.coeficiente) * qtdItem;
@@ -2904,84 +2934,103 @@ export default function App() {
 
         {tab === "materiais" && projetoAtivo && (
           <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden p-5 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-stone-800">Quantitativo de Materiais</h2>
-              <p className="text-xs text-stone-500">Consolidação de todos os materiais físicos consumidos nas CPUs do orçamento ativo.</p>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <h2 className="text-base font-semibold text-stone-800">Quantitativo de Materiais</h2>
+                <p className="text-xs text-stone-500">Escolha individualmente quais materiais terão o BDI de faturamento direto.</p>
+              </div>
+              <label className="flex items-center gap-2 border border-stone-200 rounded-md px-3 py-2 text-xs font-medium text-stone-700 cursor-pointer bg-stone-50">
+                <input
+                  type="checkbox"
+                  checked={!!bdi.faturamentoDireto}
+                  onChange={(e) => setBdi((prev) => ({ ...prev, faturamentoDireto: e.target.checked }))}
+                  className="w-4 h-4 accent-emerald-600"
+                />
+                Usar faturamento direto por material
+              </label>
             </div>
 
-            <div className="border border-stone-200 rounded-lg overflow-hidden">
+            <div className={`flex items-center justify-between gap-3 flex-wrap rounded-md border px-3 py-2 ${bdi.faturamentoDireto ? "border-emerald-200 bg-emerald-50" : "border-stone-200 bg-stone-50"}`}>
+              <span className="text-xs text-stone-600">
+                {bdi.faturamentoDireto
+                  ? `${processarMateriais.filter((material) => !Array.isArray(bdi.materiaisFaturamentoDireto) || bdi.materiaisFaturamentoDireto.includes(material.chave)).length} de ${processarMateriais.length} material(is) no faturamento direto`
+                  : "Ative o faturamento direto para liberar a seleção individual."}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => definirMateriaisFaturamentoDireto(chavesMateriaisOrcamento)}
+                  disabled={!bdi.faturamentoDireto || processarMateriais.length === 0}
+                  className="px-2.5 py-1.5 text-xs border border-stone-200 rounded-md bg-white text-stone-700 hover:bg-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Marcar todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => definirMateriaisFaturamentoDireto([])}
+                  disabled={!bdi.faturamentoDireto || processarMateriais.length === 0}
+                  className="px-2.5 py-1.5 text-xs border border-stone-200 rounded-md bg-white text-stone-700 hover:bg-stone-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Desmarcar todos
+                </button>
+              </div>
+            </div>
+
+            <div className="border border-stone-200 rounded-lg overflow-x-auto">
+              <div className="min-w-[820px]">
               <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-stone-100 border-b border-stone-200 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="col-span-6">Material</span>
+                <span className="col-span-5">Material</span>
                 <span className="col-span-1 text-center">Und</span>
                 <span className="col-span-1.5 text-right">Qtd Total</span>
                 <span className="col-span-1.5 text-right">Preço Unit.</span>
                 <span className="col-span-2 text-right">Total Bruto</span>
+                <span className="col-span-1 text-center">Fat. direto</span>
               </div>
 
               <div className="divide-y divide-stone-200 max-h-[500px] overflow-y-auto">
-                {(() => {
-                  const mats = new Map();
-                  (etapas || []).forEach(e => {
-                    itensAtivosDaEtapa(e).forEach(it => {
-                      const qtdCpu = num(it.quantidade);
-                      (it.insumos || []).forEach(ins => {
-                        const tipo = String(ins.tipo || "").toUpperCase().trim();
-                        if (tipo === "MAT" || tipo === "MATERIAL" || (!tipo.includes("MO") && !tipo.includes("MÃO") && !tipo.includes("MAO") && !tipo.includes("EQUIP"))) {
-                          if (!String(ins.descricao || "").trim()) return; 
-                          
-                          const chave = ins.descricao.trim().toLowerCase();
-                          const qtdCalc = num(ins.coeficiente) * qtdCpu;
-                          
-                          const entry = catalogMap.get(precoKey(ins.descricao));
-                          const vUnit = entry && entry.valorUnitario !== "" ? num(entry.valorUnitario) : num(ins.valorUnitario);
-                          
-                          if (mats.has(chave)) {
-                            const existente = mats.get(chave);
-                            existente.qtd += qtdCalc;
-                            existente.total += qtdCalc * vUnit;
-                          } else {
-                            mats.set(chave, {
-                              descricao: ins.descricao,
-                              unidade: ins.unidade || "un",
-                              qtd: qtdCalc,
-                              valorUnit: vUnit,
-                              total: qtdCalc * vUnit
-                            });
-                          }
-                        }
-                      });
-                    });
-                  });
-
-                  const listaMats = Array.from(mats.values()).sort((a, b) => b.total - a.total);
-                  if (listaMats.length === 0) {
-                    return <div className="p-8 text-center text-stone-400 italic text-xs">Nenhum material localizado neste orçamento.</div>;
-                  }
-
-                  return (
-                    <>
-                      {listaMats.map((r, idx) => (
-                        <div key={idx} className="grid grid-cols-12 gap-2 px-4 py-2 text-xs items-center hover:bg-stone-50/60 uppercase">
-                          <span className="col-span-6 font-medium text-stone-800 truncate">{r.descricao}</span>
-                          <span className="col-span-1 text-center font-mono text-stone-400">{r.unidade}</span>
-                          <span className="col-span-1.5 text-right font-mono text-stone-900">{r.qtd.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</span>
-                          <span className="col-span-1.5 text-right font-mono text-stone-400">R$ {fmt(r.valorUnit)}</span>
-                          <span className="col-span-2 text-right font-mono font-semibold text-emerald-700">R$ {fmt(r.total)}</span>
+                {processarMateriais.length === 0 ? (
+                  <div className="p-8 text-center text-stone-400 italic text-xs">Nenhum material localizado neste orçamento.</div>
+                ) : (
+                  <>
+                    {processarMateriais.map((material) => {
+                      const marcado = !!bdi.faturamentoDireto && (
+                        !Array.isArray(bdi.materiaisFaturamentoDireto) ||
+                        bdi.materiaisFaturamentoDireto.includes(material.chave)
+                      );
+                      return (
+                        <div key={material.chave} className={`grid grid-cols-12 gap-2 px-4 py-2 text-xs items-center uppercase ${marcado ? "bg-emerald-50/60" : "hover:bg-stone-50/60"}`}>
+                          <span className="col-span-5 font-medium text-stone-800 truncate" title={material.material}>{material.material}</span>
+                          <span className="col-span-1 text-center font-mono text-stone-400">{material.unidade}</span>
+                          <span className="col-span-1.5 text-right font-mono text-stone-900">{material.quantidade.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</span>
+                          <span className="col-span-1.5 text-right font-mono text-stone-400">R$ {fmt(material.valorUnitario)}</span>
+                          <span className="col-span-2 text-right font-mono font-semibold text-emerald-700">R$ {fmt(material.valorTotal)}</span>
+                          <label className="col-span-1 flex justify-center cursor-pointer" title="Aplicar faturamento direto neste material">
+                            <input
+                              type="checkbox"
+                              checked={marcado}
+                              disabled={!bdi.faturamentoDireto}
+                              onChange={(e) => alternarMaterialFaturamentoDireto(material.chave, e.target.checked)}
+                              aria-label={`Faturamento direto: ${material.material}`}
+                              className="w-4 h-4 accent-emerald-600 disabled:opacity-40"
+                            />
+                          </label>
                         </div>
-                      ))}
-                      
-                      <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-900 text-white text-sm font-semibold">
-                        <span className="col-span-6">TOTAL GERAL EM MATERIAIS</span>
-                        <span className="col-span-1"></span>
-                        <span className="col-span-1.5"></span>
-                        <span className="col-span-1.5"></span>
-                        <span className="col-span-2 text-right font-mono text-amber-400">
-                          R$ {fmt(listaMats.reduce((acc, curr) => acc + curr.total, 0))}
-                        </span>
-                      </div>
-                    </>
-                  );
-                })()}
+                      );
+                    })}
+
+                    <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-900 text-white text-sm font-semibold">
+                      <span className="col-span-5">TOTAL GERAL EM MATERIAIS</span>
+                      <span className="col-span-1"></span>
+                      <span className="col-span-1.5"></span>
+                      <span className="col-span-1.5"></span>
+                      <span className="col-span-2 text-right font-mono text-amber-400">
+                        R$ {fmt(processarMateriais.reduce((acc, material) => acc + material.valorTotal, 0))}
+                      </span>
+                      <span className="col-span-1"></span>
+                    </div>
+                  </>
+                )}
+              </div>
               </div>
             </div>
           </div>
@@ -5177,7 +5226,7 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
       <div className="bg-white border border-stone-200 rounded-lg p-4 flex justify-between items-center flex-wrap gap-3">
         <div>
           <h3 className="font-semibold text-sm text-stone-800">Opções do Regime de Faturamento</h3>
-          <p className="text-xs text-stone-400">Ative o BDI diferenciado se houver materiais faturados direto pelo fornecedor.</p>
+          <p className="text-xs text-stone-400">Ative o BDI diferenciado e escolha os materiais correspondentes na aba Materiais.</p>
         </div>
         <label className="flex items-center gap-2 bg-stone-50 border border-stone-200 px-3 py-1.5 rounded-md cursor-pointer select-none hover:bg-stone-100 transition-colors text-xs font-semibold text-stone-700">
           <input
