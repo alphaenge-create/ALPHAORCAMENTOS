@@ -135,6 +135,34 @@ const obterStatusProjeto = (projeto) => {
       className: "border-emerald-200 bg-emerald-50 text-emerald-700",
     };
   }
+  if (status === "enviado cliente") {
+    return {
+      id: "enviado_cliente",
+      label: "Enviado p/ cliente",
+      className: "border-sky-200 bg-sky-50 text-sky-700",
+    };
+  }
+  if (status === "cancelado") {
+    return {
+      id: "cancelado",
+      label: "Cancelado",
+      className: "border-stone-300 bg-stone-200 text-stone-700",
+    };
+  }
+  if (status === "aprovado") {
+    return {
+      id: "aprovado",
+      label: "Aprovado",
+      className: "border-emerald-300 bg-emerald-100 text-emerald-800",
+    };
+  }
+  if (status === "reprovado") {
+    return {
+      id: "reprovado",
+      label: "Reprovado",
+      className: "border-rose-200 bg-rose-50 text-rose-700",
+    };
+  }
 
   return {
     id: "em_elaboracao",
@@ -1911,6 +1939,10 @@ export default function App() {
                   <option value="cadastro_pendente">Cadastro pendente</option>
                   <option value="rascunho">Rascunho</option>
                   <option value="concluido">Concluído</option>
+                  <option value="enviado_cliente">Enviado p/ cliente</option>
+                  <option value="cancelado">Cancelado</option>
+                  <option value="aprovado">Aprovado</option>
+                  <option value="reprovado">Reprovado</option>
                 </select>
                 <div className="relative lg:w-44">
                   <ArrowUpDown
@@ -2037,6 +2069,10 @@ export default function App() {
                                   <>
                                     <option value="rascunho">Rascunho</option>
                                     <option value="em_elaboracao">Em elaboração</option>
+                                    <option value="enviado_cliente">Enviado p/ cliente</option>
+                                    <option value="aprovado">Aprovado</option>
+                                    <option value="reprovado">Reprovado</option>
+                                    <option value="cancelado">Cancelado</option>
                                     <option value="concluido">Concluído</option>
                                   </>
                                 )}
@@ -2141,6 +2177,10 @@ export default function App() {
                                 <>
                                   <option value="rascunho">Rascunho</option>
                                   <option value="em_elaboracao">Em elaboração</option>
+                                  <option value="enviado_cliente">Enviado p/ cliente</option>
+                                  <option value="aprovado">Aprovado</option>
+                                  <option value="reprovado">Reprovado</option>
+                                  <option value="cancelado">Cancelado</option>
                                   <option value="concluido">Concluído</option>
                                 </>
                               )}
