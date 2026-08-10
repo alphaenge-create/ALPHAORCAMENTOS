@@ -1,4 +1,4 @@
-import { findSubCpu, precoKey } from "./calculos";
+import { findSubCpu, insumosResolvidosSubCpu, precoKey } from "./calculos";
 import { itensAtivosDaEtapa } from "./alternativas";
 import { norm, num } from "./format";
 
@@ -70,7 +70,7 @@ const coletarMaoDeObra = (
     const proximoCaminho = new Set(visitadas);
     proximoCaminho.add(subCpu.id);
     coletarMaoDeObra(
-      subCpu.insumos,
+      insumosResolvidosSubCpu(insumo, subCpu),
       horasOuQuantidade,
       cpus,
       catalogMap,

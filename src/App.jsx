@@ -14,6 +14,7 @@ import {
   criarIndiceBuscaCpus,
   cpuValorUnit,
   findSubCpu,
+  insumosResolvidosSubCpu,
   insumoValorUnitario,
   precoKey,
 } from "./utils/calculos";
@@ -3891,7 +3892,13 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
     }
   };
 
-  const renderSubCpuTree = (cpu, nivel = 0, visited = new Set()) => {
+  const renderSubCpuTree = (
+    cpu,
+    insumosCpu,
+    onChangeInsumosCpu,
+    nivel = 0,
+    visited = new Set()
+  ) => {
     if (!cpu || visited.has(cpu.id)) {
       return null;
     }
@@ -3908,13 +3915,22 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
           <span className="col-span-1.5 text-right">Valor unit.</span>
           <span className="col-span-1.5 text-right">Subtotal</span>
         </div>
-        {(cpu.insumos || []).map((subInsumo) => {
+        {(insumosCpu || []).map((subInsumo, subIndex) => {
           const rowKey = `${cpu.id}-${subInsumo.id || subInsumo.codigo || subInsumo.descricao}-${nivel}`;
           const subSubCpu = findSubCpu(subInsumo, cpus);
           const estaAberta = !!subCpusExpandidas[rowKey];
           const subValor = insumoValorUnitario(subInsumo, cpus, catalogMap, nextVisited);
           const subTotal = num(subInsumo.coeficiente) * subValor;
           const podeEditarValor = !readOnly && !subSubCpu && onUpsertPreco;
+          const podeEditarCoeficiente = !readOnly && !!onChangeInsumosCpu;
+          const atualizarSubInsumo = (patch) => {
+            if (!onChangeInsumosCpu) return;
+            onChangeInsumosCpu(
+              insumosCpu.map((item, index) =>
+                index === subIndex ? { ...item, ...patch } : item
+              )
+            );
+          };
 
           return (
             <React.Fragment key={rowKey}>
@@ -3936,7 +3952,20 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
                   <span className="truncate">{subInsumo.codigo ? `${subInsumo.codigo} - ` : ""}{subInsumo.descricao}</span>
                 </span>
                 <span className="col-span-1 text-center font-mono text-stone-400">{subInsumo.unidade || "un"}</span>
-                <span className="col-span-2 text-right font-mono text-stone-600">{fmt(subInsumo.coeficiente)}</span>
+                <span className="col-span-2 text-right font-mono text-stone-600">
+                  {podeEditarCoeficiente ? (
+                    <input
+                      type="number"
+                      step="any"
+                      value={subInsumo.coeficiente ?? ""}
+                      onChange={(e) => atualizarSubInsumo({ coeficiente: e.target.value })}
+                      className="w-24 border border-amber-200 rounded px-1 py-0.5 text-right font-mono bg-white outline-none focus:ring-1 focus:ring-amber-500"
+                      title="Coeficiente personalizado somente para este orçamento"
+                    />
+                  ) : (
+                    fmt(subInsumo.coeficiente)
+                  )}
+                </span>
                 <span className="col-span-1.5 text-right font-mono text-stone-500">
                   {podeEditarValor ? (
                     <input
@@ -3965,7 +3994,13 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
                   {nextVisited.has(subSubCpu.id) ? (
                     <div className="text-[11px] text-amber-700 px-3 py-2">Ciclo de sub-CPU detectado; expansão interrompida.</div>
                   ) : (
-                    renderSubCpuTree(subSubCpu, nivel + 1, nextVisited)
+                    renderSubCpuTree(
+                      subSubCpu,
+                      insumosResolvidosSubCpu(subInsumo, subSubCpu),
+                      (novosInsumos) => atualizarSubInsumo({ subCpuInsumos: novosInsumos }),
+                      nivel + 1,
+                      nextVisited
+                    )
                   )}
                 </div>
               )}
@@ -3993,6 +4028,7 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
         {insumos.map((i) => {
           const valorEfetivo = insumoValorUnitario(i, cpus, catalogMap);
           const subCpu = findSubCpu(i, cpus);
+          const insumosSubCpu = subCpu ? insumosResolvidosSubCpu(i, subCpu) : [];
           const subCpuAberta = !!subCpusExpandidas[i.id];
           return (
           <React.Fragment key={i.id}>
@@ -4084,7 +4120,11 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
           {subCpu && subCpuAberta && (
             <tr className="bg-amber-50/20 border-t border-amber-100">
               <td colSpan={readOnly ? 6 : 7} className="py-2 pl-10 pr-2">
-                {renderSubCpuTree(subCpu)}
+                {renderSubCpuTree(
+                  subCpu,
+                  insumosSubCpu,
+                  (novosInsumos) => setMany(i.id, { subCpuInsumos: novosInsumos })
+                )}
               </td>
             </tr>
           )}

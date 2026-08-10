@@ -45,6 +45,11 @@ export const findSubCpu = (insumo, cpusArray = []) => {
   );
 };
 
+export const insumosResolvidosSubCpu = (insumo, subCpu) =>
+  Array.isArray(insumo?.subCpuInsumos)
+    ? insumo.subCpuInsumos
+    : (subCpu?.insumos || []);
+
 export const criarIndiceBuscaCpus = (cpusArray = []) => {
   const memo = new Map();
   const emProcessamento = new Set();
@@ -94,7 +99,12 @@ export const insumoValorUnitario = (insumo, cpusArray = [], catMap = null, visit
   if (subCpu) {
     if (visited.has(subCpu.id)) return 0;
     visited.add(subCpu.id);
-    const val = cpuValorUnit(subCpu.insumos, cpusArray, catMap, visited);
+    const val = cpuValorUnit(
+      insumosResolvidosSubCpu(insumo, subCpu),
+      cpusArray,
+      catMap,
+      visited
+    );
     visited.delete(subCpu.id);
     return val;
   }
@@ -162,7 +172,7 @@ export function buildCatalog(cpus, projetos, projetoAtivoId, precos) {
 
       const proximoCaminho = new Set(cpusVisitadas);
       proximoCaminho.add(subCpu.id);
-      (subCpu.insumos || []).forEach((subInsumo) =>
+      insumosResolvidosSubCpu(insumo, subCpu).forEach((subInsumo) =>
         registrarInsumoAtivo(subInsumo, proximoCaminho)
       );
     };
