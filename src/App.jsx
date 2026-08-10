@@ -1408,9 +1408,9 @@ export default function App() {
             const nomeMat = (insumo.descricao || "").toUpperCase().trim();
             if (!nomeMat) return;
 
-            // Busca o valor unitário atualizado diretamente do catálogo/banco de preços de referência
-            const entry = catalogMap.get(precoKey(insumo.descricao));
-            const precoUnit = entry && entry.valorUnitario !== "" ? num(entry.valorUnitario) : num(insumo.valorUnitario);
+            // Usa a mesma resolução do orçamento: preço direto para insumos simples
+            // e recálculo completo para subcomposições, inclusive em múltiplos níveis.
+            const precoUnit = insumoValorUnitario(insumo, cpus, catalogMap);
 
             const qtdTotal = num(insumo.coeficiente) * qtdItem;
             const custoTotal = qtdTotal * precoUnit;
@@ -1432,7 +1432,7 @@ export default function App() {
       });
     });
     return Object.values(resumoMAT).sort((a, b) => b.valorTotal - a.valorTotal); // Ordena do mais caro para o mais barato
-  }, [etapas, catalogMap]);
+  }, [etapas, cpus, catalogMap]);
 
   const chavesMateriaisOrcamento = useMemo(
     () => processarMateriais.map((material) => material.chave),
@@ -2866,7 +2866,7 @@ export default function App() {
 
                           let totalCpuComBdi = 0;
                           (item.insumos || []).forEach(ins => {
-                            const cIn = num(ins.coeficiente) * num(ins.valorUnitario);
+                            const cIn = num(ins.coeficiente) * insumoValorUnitario(ins, cpus, catalogMap);
                             totalCpuComBdi += cIn * fatorVendaInsumo(ins, bdiCalc);
                           });
 
@@ -2892,8 +2892,7 @@ export default function App() {
                                 <div className="bg-stone-50/50 divide-y divide-stone-100/60 border-t border-b border-stone-100">
                                   {(item.insumos || []).map((insumo, idxInsumo) => {
                                     const numInsumo = `${numCpu}.${idxInsumo + 1}`;
-                                    const entry = catalogMap.get(precoKey(insumo.descricao));
-                                    const custoUnit = entry && entry.valorUnitario !== "" ? num(entry.valorUnitario) : num(insumo.valorUnitario);
+                                    const custoUnit = insumoValorUnitario(insumo, cpus, catalogMap);
                                     
                                     const precoVendaInsumo = custoUnit * fatorVendaInsumo(insumo, bdiCalc);
                                     
