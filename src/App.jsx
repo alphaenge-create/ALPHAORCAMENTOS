@@ -55,6 +55,7 @@ const BDI_PADRAO = {
   custoFinanceiro: 0.03,
   dasAnexoIV: 0.13,
   art: 0,
+  retencaoInss: 0,
   lucro: 0.42,
   collemAtivo: false,
   collemX: 1,
@@ -265,6 +266,11 @@ const insumoEhMaterial = (tipo) => {
   return t === "MAT" || t === "MATERIAL" || (!t.includes("MO") && !t.includes("MÃO") && !t.includes("MAO") && !t.includes("EQUIP"));
 };
 
+const insumoEhMaoDeObra = (tipo) => {
+  const t = String(tipo || "").toUpperCase().trim();
+  return t === "MO" || t.includes("MÃO DE OBRA") || t.includes("MAO DE OBRA");
+};
+
 const insumoComFaturamentoDireto = (insumo, configuracao = {}, cliente = {}) => {
   if (!insumoEhMaterial(insumo?.tipo)) return false;
   if (!configuracao?.faturamentoDireto && !materialFaturamentoDireto(cliente)) return false;
@@ -272,6 +278,16 @@ const insumoComFaturamentoDireto = (insumo, configuracao = {}, cliente = {}) => 
   const selecionados = configuracao?.materiaisFaturamentoDireto;
   if (!Array.isArray(selecionados)) return true;
   return selecionados.includes(precoKey(insumo?.descricao));
+};
+
+const fatorVendaInsumo = (insumo, bdiCalc = {}, cliente = {}) => {
+  if (insumoComFaturamentoDireto(insumo, bdiCalc, cliente)) {
+    return num(bdiCalc.FatorBdiMateriais) || 1;
+  }
+  if (insumoEhMaoDeObra(insumo?.tipo)) {
+    return num(bdiCalc.FatorBdiMaoObra) || num(bdiCalc.FatorBdi) || 1;
+  }
+  return num(bdiCalc.FatorBdi) || 1;
 };
 
 const nomeArquivoSeguro = (valor) =>
@@ -299,8 +315,7 @@ const itemVendaResumo = (item, bdiCalc, cpus, catalogMap, cliente = {}) => {
     if (materialPorContaCliente(cliente) && isMaterial) return;
 
     const custoBase = num(ins.coeficiente) * quantidade * insumoValorUnitario(ins, cpus, catalogMap);
-    const isMat = isMaterial && insumoComFaturamentoDireto(ins, bdiCalc, cliente);
-    total += custoBase * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
+    total += custoBase * fatorVendaInsumo(ins, bdiCalc, cliente);
   });
 
   return {
@@ -797,14 +812,20 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
     faturamentoDireto && bdi?.materiais
       ? calcularFatorBdiQualquer(bdi.materiais)
       : FatorBdiGeralBase;
+  const retencaoInss = Math.min(0.99, Math.max(0, num(bdi?.retencaoInss)));
+  const FatorBdiMaoObraBase = retencaoInss > 0
+    ? FatorBdiGeralBase / (1 - retencaoInss)
+    : FatorBdiGeralBase;
   const collemAtivo = !!bdi?.collemAtivo;
   const collemX = num(bdi?.collemX) > 0 ? num(bdi.collemX) : 1;
   const collemY = num(bdi?.collemY) > 0 ? num(bdi.collemY) : 1;
   const divisorCollem = collemAtivo ? collemX * collemY : 1;
   const FatorBdiGeral = FatorBdiGeralBase / divisorCollem;
   const FatorBdiMateriais = FatorBdiMateriaisBase / divisorCollem;
+  const FatorBdiMaoObra = FatorBdiMaoObraBase / divisorCollem;
 
   let totalCustoDireto = 0;
+  let custoMaoObra = 0;
   let totalPrecoVenda = 0;
   let totalPrecoVendaBase = 0;
 
@@ -818,6 +839,10 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
         if (insumoComFaturamentoDireto(ins, { faturamentoDireto, materiaisFaturamentoDireto })) {
           totalPrecoVendaBase += custoInsumoTotal * FatorBdiMateriaisBase;
           totalPrecoVenda += custoInsumoTotal * FatorBdiMateriais;
+        } else if (insumoEhMaoDeObra(ins.tipo)) {
+          custoMaoObra += custoInsumoTotal;
+          totalPrecoVendaBase += custoInsumoTotal * FatorBdiMaoObraBase;
+          totalPrecoVenda += custoInsumoTotal * FatorBdiMaoObra;
         } else {
           totalPrecoVendaBase += custoInsumoTotal * FatorBdiGeralBase;
           totalPrecoVenda += custoInsumoTotal * FatorBdiGeral;
@@ -828,14 +853,23 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
 
   const totalDiValor = totalPrecoVenda - totalCustoDireto;
   const totalDiRate = totalCustoDireto > 0 ? totalDiValor / totalCustoDireto : 0;
+  const retencaoInssValorBase = custoMaoObra * (FatorBdiMaoObraBase - FatorBdiGeralBase);
+  const retencaoInssValor = retencaoInssValorBase / divisorCollem;
 
   return {
     bdiRate: FatorBdiGeralBase - 1,
     bdiRateMateriais: FatorBdiMateriaisBase - 1,
+    bdiRateMaoObra: FatorBdiMaoObraBase - 1,
     FatorBdi: FatorBdiGeral,
     FatorBdiMateriais,
+    FatorBdiMaoObra,
     FatorBdiBase: FatorBdiGeralBase,
     FatorBdiMateriaisBase,
+    FatorBdiMaoObraBase,
+    retencaoInss,
+    custoMaoObra,
+    retencaoInssValor,
+    retencaoInssValorBase,
     faturamentoDireto,
     materiaisFaturamentoDireto,
     collemAtivo,
@@ -1909,6 +1943,7 @@ export default function App() {
                         custoFinanceiro: 0,
                         dasAnexoIV: 0,
                         art: 0,
+                        retencaoInss: 0,
                         lucro: 0,
                         faturamentoDireto: false,
                         collemAtivo: false,
@@ -2568,6 +2603,7 @@ export default function App() {
                 <h2 className="text-base font-semibold text-stone-800">Planilha de Preço de Venda (Custo + BDI)</h2>
                 <p className="text-xs text-stone-500">
                   Visualização hierárquica por Etapa / CPU / Insumos aplicando BDI Geral de {fmt(bdiCalc.bdiRate * 100)}% {bdiCalc.faturamentoDireto && `e BDI de Materiais de ${fmt(bdiCalc.bdiRateMateriais * 100)}%`}
+                  {bdiCalc.retencaoInss > 0 && `, com compensação de INSS de ${fmt(bdiCalc.retencaoInss * 100)}% somente sobre a mão de obra`}
                   {bdiCalc.collemAtivo && <> e condição COLLEM ÷ {fmt(bdiCalc.collemX)} ÷ {fmt(bdiCalc.collemY)}</>}. Valor Comercial Fechado: <span className="font-bold text-stone-800 font-mono">R$ {fmt(bdiCalc.valorVenda)}</span>
                 </p>
               </div>
@@ -2608,8 +2644,7 @@ export default function App() {
                         const qCpu = num(it.quantidade);
                         (it.insumos || []).forEach(ins => {
                           const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
-                          const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
-                          totalEtapaVenda += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
+                          totalEtapaVenda += cIn * fatorVendaInsumo(ins, bdiCalc);
                         });
                       });
 
@@ -2620,16 +2655,14 @@ export default function App() {
                         let totalItemVenda = 0;
                         (item.insumos || []).forEach(ins => {
                           const cIn = num(ins.coeficiente) * num(item.quantidade) * insumoValorUnitario(ins, cpus, catalogMap);
-                          const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
-                          totalItemVenda += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
+                          totalItemVenda += cIn * fatorVendaInsumo(ins, bdiCalc);
                         });
 
                         data.push([numCpu, item.servico || item.descricao, item.unidade, num(item.quantidade), totalItemVenda / num(item.quantidade), totalItemVenda]);
                         
                         (item.insumos || []).forEach((ins, idxIn) => {
                           const custoUnit = insumoValorUnitario(ins, cpus, catalogMap);
-                          const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
-                          const fatBdi = isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi;
+                          const fatBdi = fatorVendaInsumo(ins, bdiCalc);
                           
                           data.push([`${numCpu}.${idxIn + 1}`, `[${ins.tipo}] ${ins.descricao}`, ins.unidade || "un", num(ins.coeficiente) * num(item.quantidade), custoUnit * fatBdi, (num(ins.coeficiente) * num(item.quantidade)) * custoUnit * fatBdi]);
                         });
@@ -2806,8 +2839,7 @@ export default function App() {
                       const qCpu = num(it.quantidade);
                       (it.insumos || []).forEach(ins => {
                         const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
-                        const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
-                        totalEtapaComBdi += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
+                        totalEtapaComBdi += cIn * fatorVendaInsumo(ins, bdiCalc);
                       });
                     });
 
@@ -2835,8 +2867,7 @@ export default function App() {
                           let totalCpuComBdi = 0;
                           (item.insumos || []).forEach(ins => {
                             const cIn = num(ins.coeficiente) * num(ins.valorUnitario);
-                            const isMat = insumoComFaturamentoDireto(ins, bdiCalc);
-                            totalCpuComBdi += cIn * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
+                            totalCpuComBdi += cIn * fatorVendaInsumo(ins, bdiCalc);
                           });
 
                           return (
@@ -2864,8 +2895,7 @@ export default function App() {
                                     const entry = catalogMap.get(precoKey(insumo.descricao));
                                     const custoUnit = entry && entry.valorUnitario !== "" ? num(entry.valorUnitario) : num(insumo.valorUnitario);
                                     
-                                    const isMat = insumoComFaturamentoDireto(insumo, bdiCalc);
-                                    const precoVendaInsumo = custoUnit * (isMat ? bdiCalc.FatorBdiMateriais : bdiCalc.FatorBdi);
+                                    const precoVendaInsumo = custoUnit * fatorVendaInsumo(insumo, bdiCalc);
                                     
                                     const qtdCalculada = num(insumo.coeficiente) * qtdItem;
                                     const vendaTotalInsumo = qtdCalculada * precoVendaInsumo;
@@ -5377,6 +5407,15 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
                 <BdiInput label="Lucro Real de Venda" value={bdi.lucro} onChange={(v) => handleGeralChange("lucro", v)} />
                 <BdiInput label="DAS / Tributos (Anexo IV)" value={bdi.dasAnexoIV} onChange={(v) => handleGeralChange("dasAnexoIV", v)} />
                 <BdiInput label="ART / Encargos Contrato" value={bdi.art} onChange={(v) => handleGeralChange("art", v)} />
+                <BdiInput
+                  label="Retenção de INSS (somente MO)"
+                  value={bdi.retencaoInss || 0}
+                  onChange={(v) => handleGeralChange("retencaoInss", v)}
+                  maxPercent={99}
+                />
+                <p className="text-[10px] leading-4 text-stone-400">
+                  Recompõe o preço da mão de obra para compensar o desconto da retenção.
+                </p>
               </div>
 
               <div className="pt-2 border-t border-stone-100 flex justify-between items-center text-[11px] font-bold text-stone-700">
@@ -5429,6 +5468,18 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
                   <span className="text-emerald-400">BDI Materiais Aplicado:</span>
                   <span className="font-mono text-emerald-300">{fmt(bdiCalc.bdiRateMateriais * 100)}%</span>
                 </div>
+              )}
+              {bdiCalc.retencaoInss > 0 && (
+                <>
+                  <div className="flex justify-between border-t border-stone-800 pt-2">
+                    <span className="text-stone-400">Base de mão de obra:</span>
+                    <span className="font-mono">R$ {fmt(bdiCalc.custoMaoObra)}</span>
+                  </div>
+                  <div className="flex justify-between text-amber-300">
+                    <span>Compensação INSS ({fmt(bdiCalc.retencaoInss * 100)}%):</span>
+                    <span className="font-mono">R$ {fmt(bdiCalc.retencaoInssValor)}</span>
+                  </div>
+                </>
               )}
               {collemAtivo && (
                 <>
@@ -6234,11 +6285,11 @@ function CronogramaSemanal({
   );
 }
 
-function BdiInput({ label, value, onChange }) {
+function BdiInput({ label, value, onChange, maxPercent }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-stone-600">{label}</span>
-      <input type="number" step="any" value={value === 0 ? "" : num(value) * 100} onChange={(e) => onChange(e.target.value === "" ? 0 : num(e.target.value) / 100)} className="w-20 border border-stone-300 rounded px-2 py-1 text-right font-mono" placeholder="0.00" />
+      <input type="number" min="0" max={maxPercent} step="any" value={value === 0 ? "" : num(value) * 100} onChange={(e) => onChange(e.target.value === "" ? 0 : num(e.target.value) / 100)} className="w-20 border border-stone-300 rounded px-2 py-1 text-right font-mono" placeholder="0.00" />
     </div>
   );
 }
