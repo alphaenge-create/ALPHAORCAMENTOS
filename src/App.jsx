@@ -2601,11 +2601,9 @@ export default function App() {
           <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden p-5 space-y-4">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-base font-semibold text-stone-800">Planilha de Preço de Venda (Custo + BDI)</h2>
+                <h2 className="text-base font-semibold text-stone-800">Planilha de Preço de Venda</h2>
                 <p className="text-xs text-stone-500">
-                  Visualização hierárquica por Etapa / CPU / Insumos aplicando BDI Geral de {fmt(bdiCalc.bdiRate * 100)}% {bdiCalc.faturamentoDireto && `e BDI de Materiais de ${fmt(bdiCalc.bdiRateMateriais * 100)}%`}
-                  {bdiCalc.retencaoInss > 0 && `, com compensação de INSS de ${fmt(bdiCalc.retencaoInss * 100)}% somente sobre a mão de obra`}
-                  {bdiCalc.collemAtivo && <> e condição COLLEM ÷ {fmt(bdiCalc.collemX)} ÷ {fmt(bdiCalc.collemY)}</>}. Valor Comercial Fechado: <span className="font-bold text-stone-800 font-mono">R$ {fmt(bdiCalc.valorVenda)}</span>
+                  Apresentação comercial por etapas e serviços. Valor total: <span className="font-bold text-stone-800 font-mono">R$ {fmt(bdiCalc.valorVenda)}</span>
                 </p>
               </div>
               <div className="flex gap-2">
