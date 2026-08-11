@@ -1825,7 +1825,7 @@ export default function App() {
                     Planilha de custo
                   </SideTabBtn>
                   <SideTabBtn active={tab === "bdi"} onClick={() => abrirAbaProjeto("bdi")} icon={<Percent size={15} />}>
-                    BDI - {fmt(bdiCalc.bdiRate * 100)}%
+                    BDI
                   </SideTabBtn>
                   <SideTabBtn active={tab === "precovenda"} onClick={() => abrirAbaProjeto("precovenda")} icon={<TrendingUp size={15} />}>
                     Venda - R$ {fmt(bdiCalc.valorVenda)}
