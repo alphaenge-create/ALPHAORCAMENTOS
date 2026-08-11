@@ -1828,7 +1828,7 @@ export default function App() {
                     BDI
                   </SideTabBtn>
                   <SideTabBtn active={tab === "precovenda"} onClick={() => abrirAbaProjeto("precovenda")} icon={<TrendingUp size={15} />}>
-                    Venda - R$ {fmt(bdiCalc.valorVenda)}
+                    Venda
                   </SideTabBtn>
                   <SideTabBtn active={tab === "cronograma"} onClick={() => abrirAbaProjeto("cronograma")} icon={<CalendarDays size={15} />}>
                     Cronograma
