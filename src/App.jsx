@@ -5626,7 +5626,7 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
                   </div>
                   <div className="flex justify-between text-amber-300">
                     <span>Compensação INSS ({fmt(bdiCalc.retencaoInss * 100)}%):</span>
-                    <span className="font-mono">R$ {fmt(bdiCalc.retencaoInssValor)}</span>
+                    <span className="font-mono">R$ {fmt(bdiCalc.retencaoInssValorBase)}</span>
                   </div>
                 </>
               )}
