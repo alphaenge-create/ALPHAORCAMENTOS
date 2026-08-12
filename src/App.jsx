@@ -847,6 +847,7 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
 
   let totalCustoDireto = 0;
   let custoMaoObra = 0;
+  let custoMateriaisFaturamentoDireto = 0;
   let totalPrecoVenda = 0;
   let totalPrecoVendaBase = 0;
 
@@ -858,6 +859,7 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
         totalCustoDireto += custoInsumoTotal;
 
         if (insumoComFaturamentoDireto(ins, { faturamentoDireto, materiaisFaturamentoDireto })) {
+          custoMateriaisFaturamentoDireto += custoInsumoTotal;
           totalPrecoVendaBase += custoInsumoTotal * FatorBdiMateriaisBase;
           totalPrecoVenda += custoInsumoTotal * FatorBdiMateriais;
         } else if (insumoEhMaoDeObra(ins.tipo)) {
@@ -876,6 +878,7 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
   const totalDiRate = totalCustoDireto > 0 ? totalDiValor / totalCustoDireto : 0;
   const retencaoInssValorBase = custoMaoObra * (FatorBdiMaoObraBase - FatorBdiGeralBase);
   const retencaoInssValor = retencaoInssValorBase / divisorCollem;
+  const custoBaseBdiGeral = totalCustoDireto - custoMateriaisFaturamentoDireto;
 
   return {
     bdiRate: FatorBdiGeralBase - 1,
@@ -889,6 +892,8 @@ const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
     FatorBdiMaoObraBase,
     retencaoInss,
     custoMaoObra,
+    custoBaseBdiGeral,
+    custoMateriaisFaturamentoDireto,
     retencaoInssValor,
     retencaoInssValorBase,
     faturamentoDireto,
@@ -5427,6 +5432,25 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
 
   const bdiGeralRate = calcularFatorQualquer(bdi) - 1;
   const bdiMatRate = faturamentoDireto ? (calcularFatorQualquer(bdiMats) - 1) : bdiGeralRate;
+  const calcularValoresIndices = (taxas, baseCalculo) => {
+    const valores = {};
+    let acumulado = num(baseCalculo);
+
+    ["admCentral", "contabilidade", "contingenciamento", "custoFinanceiro", "lucro"].forEach((campo) => {
+      valores[campo] = acumulado * num(taxas?.[campo]);
+      acumulado += valores[campo];
+    });
+
+    const das = num(taxas?.dasAnexoIV);
+    const art = num(taxas?.art);
+    const denominador = 1 - das - art;
+    const venda = denominador > 0 ? acumulado / denominador : acumulado;
+    valores.dasAnexoIV = denominador > 0 ? venda * das : 0;
+    valores.art = denominador > 0 ? venda * art : 0;
+    return valores;
+  };
+  const valoresIndicesGerais = calcularValoresIndices(bdi, bdiCalc.custoBaseBdiGeral);
+  const valoresIndicesMateriais = calcularValoresIndices(bdiMats, bdiCalc.custoMateriaisFaturamentoDireto);
 
   return (
     <div className="space-y-6">
@@ -5513,21 +5537,25 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
               <h4 className="font-bold text-stone-700 uppercase text-[10px] bg-stone-100 px-2 py-1 rounded tracking-wide">
                 {faturamentoDireto ? "1. Taxas Gerais (Serviços e MO)" : "Taxas Gerais / Padrão"}
               </h4>
+              <div className="grid grid-cols-[minmax(0,1fr)_5rem_7.5rem] gap-2 text-[9px] uppercase text-stone-400 font-medium">
+                <span>Índice</span><span className="text-right">%</span><span className="text-right">Valor</span>
+              </div>
               
               <div className="space-y-3">
                 <h5 className="font-medium text-stone-400 uppercase text-[9px]">Administração e Riscos</h5>
-                <BdiInput label="Administração Central" value={bdi.admCentral} onChange={(v) => handleGeralChange("admCentral", v)} />
-                <BdiInput label="Contabilidade / Seguros" value={bdi.contabilidade} onChange={(v) => handleGeralChange("contabilidade", v)} />
-                <BdiInput label="Contingenciamento" value={bdi.contingenciamento} onChange={(v) => handleGeralChange("contingenciamento", v)} />
-                <BdiInput label="Custo Financeiro" value={bdi.custoFinanceiro} onChange={(v) => handleGeralChange("custoFinanceiro", v)} />
+                <BdiInput label="Administração Central" value={bdi.admCentral} amount={valoresIndicesGerais.admCentral} onChange={(v) => handleGeralChange("admCentral", v)} />
+                <BdiInput label="Contabilidade / Seguros" value={bdi.contabilidade} amount={valoresIndicesGerais.contabilidade} onChange={(v) => handleGeralChange("contabilidade", v)} />
+                <BdiInput label="Contingenciamento" value={bdi.contingenciamento} amount={valoresIndicesGerais.contingenciamento} onChange={(v) => handleGeralChange("contingenciamento", v)} />
+                <BdiInput label="Custo Financeiro" value={bdi.custoFinanceiro} amount={valoresIndicesGerais.custoFinanceiro} onChange={(v) => handleGeralChange("custoFinanceiro", v)} />
                 
                 <h5 className="font-medium text-stone-400 uppercase text-[9px] pt-1">Margem e Impostos</h5>
-                <BdiInput label="Lucro Real de Venda" value={bdi.lucro} onChange={(v) => handleGeralChange("lucro", v)} />
-                <BdiInput label="DAS / Tributos (Anexo IV)" value={bdi.dasAnexoIV} onChange={(v) => handleGeralChange("dasAnexoIV", v)} />
-                <BdiInput label="ART / Encargos Contrato" value={bdi.art} onChange={(v) => handleGeralChange("art", v)} />
+                <BdiInput label="Lucro Real de Venda" value={bdi.lucro} amount={valoresIndicesGerais.lucro} onChange={(v) => handleGeralChange("lucro", v)} />
+                <BdiInput label="DAS / Tributos (Anexo IV)" value={bdi.dasAnexoIV} amount={valoresIndicesGerais.dasAnexoIV} onChange={(v) => handleGeralChange("dasAnexoIV", v)} />
+                <BdiInput label="ART / Encargos Contrato" value={bdi.art} amount={valoresIndicesGerais.art} onChange={(v) => handleGeralChange("art", v)} />
                 <BdiInput
                   label="Retenção de INSS (somente MO)"
                   value={bdi.retencaoInss || 0}
+                  amount={bdiCalc.retencaoInssValorBase}
                   onChange={(v) => handleGeralChange("retencaoInss", v)}
                   maxPercent={99}
                 />
@@ -5548,18 +5576,21 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
                 <h4 className="font-bold text-emerald-800 uppercase text-[10px] bg-emerald-50 px-2 py-1 rounded tracking-wide">
                   2. Taxas Exclusivas para Materiais
                 </h4>
-                
+                <div className="grid grid-cols-[minmax(0,1fr)_5rem_7.5rem] gap-2 text-[9px] uppercase text-emerald-600/70 font-medium">
+                  <span>Índice</span><span className="text-right">%</span><span className="text-right">Valor</span>
+                </div>
+
                 <div className="space-y-3">
                   <h5 className="font-medium text-emerald-600/70 uppercase text-[9px]">Administração e Riscos</h5>
-                  <BdiInput label="Administração Central" value={bdiMats.admCentral} onChange={(v) => handleMatChange("admCentral", v)} />
-                  <BdiInput label="Contabilidade / Seguros" value={bdiMats.contabilidade} onChange={(v) => handleMatChange("contabilidade", v)} />
-                  <BdiInput label="Contingenciamento" value={bdiMats.contingenciamento} onChange={(v) => handleMatChange("contingenciamento", v)} />
-                  <BdiInput label="Custo Financeiro" value={bdiMats.custoFinanceiro} onChange={(v) => handleMatChange("custoFinanceiro", v)} />
+                  <BdiInput label="Administração Central" value={bdiMats.admCentral} amount={valoresIndicesMateriais.admCentral} onChange={(v) => handleMatChange("admCentral", v)} />
+                  <BdiInput label="Contabilidade / Seguros" value={bdiMats.contabilidade} amount={valoresIndicesMateriais.contabilidade} onChange={(v) => handleMatChange("contabilidade", v)} />
+                  <BdiInput label="Contingenciamento" value={bdiMats.contingenciamento} amount={valoresIndicesMateriais.contingenciamento} onChange={(v) => handleMatChange("contingenciamento", v)} />
+                  <BdiInput label="Custo Financeiro" value={bdiMats.custoFinanceiro} amount={valoresIndicesMateriais.custoFinanceiro} onChange={(v) => handleMatChange("custoFinanceiro", v)} />
                   
                   <h5 className="font-medium text-emerald-600/70 uppercase text-[9px] pt-1">Margem e Impostos</h5>
-                  <BdiInput label="Lucro Real de Venda" value={bdiMats.lucro} onChange={(v) => handleMatChange("lucro", v)} />
-                  <BdiInput label="DAS / Tributos (Anexo IV)" value={bdiMats.dasAnexoIV} onChange={(v) => handleMatChange("dasAnexoIV", v)} />
-                  <BdiInput label="ART / Encargos Contrato" value={bdiMats.art} onChange={(v) => handleMatChange("art", v)} />
+                  <BdiInput label="Lucro Real de Venda" value={bdiMats.lucro} amount={valoresIndicesMateriais.lucro} onChange={(v) => handleMatChange("lucro", v)} />
+                  <BdiInput label="DAS / Tributos (Anexo IV)" value={bdiMats.dasAnexoIV} amount={valoresIndicesMateriais.dasAnexoIV} onChange={(v) => handleMatChange("dasAnexoIV", v)} />
+                  <BdiInput label="ART / Encargos Contrato" value={bdiMats.art} amount={valoresIndicesMateriais.art} onChange={(v) => handleMatChange("art", v)} />
                 </div>
 
                 <div className="pt-2 border-t border-stone-100 flex justify-between items-center text-[11px] font-bold text-emerald-800">
@@ -6403,11 +6434,14 @@ function CronogramaSemanal({
   );
 }
 
-function BdiInput({ label, value, onChange, maxPercent }) {
+function BdiInput({ label, value, amount, onChange, maxPercent }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-stone-600">{label}</span>
+    <div className="grid grid-cols-[minmax(0,1fr)_5rem_7.5rem] items-center gap-2">
+      <span className="text-stone-600 min-w-0">{label}</span>
       <input type="number" min="0" max={maxPercent} step="any" value={value === 0 ? "" : num(value) * 100} onChange={(e) => onChange(e.target.value === "" ? 0 : num(e.target.value) / 100)} className="w-20 border border-stone-300 rounded px-2 py-1 text-right font-mono" placeholder="0.00" />
+      <span className="text-right font-mono text-[10px] text-stone-500 whitespace-nowrap" title="Valor correspondente ao índice">
+        R$ {fmt(amount)}
+      </span>
     </div>
   );
 }
