@@ -291,6 +291,26 @@ const fatorVendaInsumo = (insumo, bdiCalc = {}, cliente = {}) => {
   return num(bdiCalc.FatorBdi) || 1;
 };
 
+const buscarInsumosCatalogo = (catalogMap, textoBusca, limite = 12) => {
+  const busca = normalizarBusca(textoBusca).trim();
+  const termos = busca.split(/\s+/).filter(Boolean);
+  if (!busca || termos.length === 0 || !catalogMap) return [];
+
+  return Array.from(catalogMap.values())
+    .filter((insumo) => {
+      const descricao = normalizarBusca(insumo.descricao);
+      return termos.every((termo) => descricao.includes(termo));
+    })
+    .sort((a, b) => {
+      const descricaoA = normalizarBusca(a.descricao);
+      const descricaoB = normalizarBusca(b.descricao);
+      const inicioA = descricaoA.startsWith(busca) ? 0 : 1;
+      const inicioB = descricaoB.startsWith(busca) ? 0 : 1;
+      return inicioA - inicioB || descricaoA.length - descricaoB.length || descricaoA.localeCompare(descricaoB, "pt-BR");
+    })
+    .slice(0, limite);
+};
+
 const nomeArquivoSeguro = (valor) =>
   String(valor || "Orcamento")
     .normalize("NFD")
@@ -3471,6 +3491,11 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
     [cpuSearchIndex, fonteFiltro, queryTokens]
   );
 
+  const insumosFiltrados = useMemo(
+    () => buscarInsumosCatalogo(catalogMap, query),
+    [catalogMap, query]
+  );
+
   const [confirmingDelete, setConfirmingDelete] = useState(null);
 
   const removeCpu = (id) => {
@@ -3828,7 +3853,36 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
 
       {importMsg && <div className="mb-4 text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">{importMsg}</div>}
 
+      {query.trim() && insumosFiltrados.length > 0 && (
+        <div className="mb-4 border border-stone-200 rounded-lg overflow-hidden bg-white">
+          <div className="px-3 py-2 bg-stone-100 border-b border-stone-200 flex items-center justify-between gap-3">
+            <span className="text-xs font-semibold text-stone-700">Insumos encontrados</span>
+            <span className="text-[10px] text-stone-400">Pesquisa pelo nome do insumo</span>
+          </div>
+          <div className="divide-y divide-stone-100 max-h-56 overflow-y-auto">
+            {insumosFiltrados.map((insumo) => (
+              <div key={insumo.key || insumo.id} className="grid grid-cols-[auto_1fr_auto] gap-3 items-center px-3 py-2 text-xs">
+                <span className="px-1.5 py-0.5 bg-stone-100 text-stone-600 rounded font-medium text-[10px]">{insumo.tipo || "INS"}</span>
+                <span className="text-stone-800 truncate" title={insumo.descricao}>{insumo.descricao}</span>
+                <span className="font-mono text-stone-400">{insumo.unidade || "un"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
+        {query.trim() && (
+          <div className="flex items-center justify-between px-1 pb-1">
+            <span className="text-xs font-semibold text-stone-700">CPUs encontradas pelo nome ou código</span>
+            <span className="text-[10px] text-stone-400">{filtered.length} resultado(s)</span>
+          </div>
+        )}
+        {query.trim() && filtered.length === 0 && (
+          <div className="border border-stone-200 rounded-lg bg-white px-4 py-5 text-center text-xs text-stone-400">
+            Nenhuma CPU possui essas palavras no nome ou código.
+          </div>
+        )}
         {filtered.map((c, index) => (
           <div 
             key={c.id} 
@@ -4808,16 +4862,19 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
     return result;
   };
 
+  const obterInsumosFiltrados = (textoBusca) =>
+    buscarInsumosCatalogo(catalogMap, textoBusca, 8);
+
   const handleKeyDown = (evt, etapaId, listaCpus) => {
-    if (listaCpus.length === 0) return;
-    
     const currentIndex = activeIndices[etapaId] !== undefined ? activeIndices[etapaId] : -1;
 
     if (evt.key === "ArrowDown") {
+      if (listaCpus.length === 0) return;
       evt.preventDefault();
       const nextIndex = (currentIndex + 1) % listaCpus.length;
       setActiveIndices({ ...activeIndices, [etapaId]: nextIndex });
     } else if (evt.key === "ArrowUp") {
+      if (listaCpus.length === 0) return;
       evt.preventDefault();
       const prevIndex = (currentIndex - 1 + listaCpus.length) % listaCpus.length;
       setActiveIndices({ ...activeIndices, [etapaId]: prevIndex });
@@ -4863,6 +4920,7 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
         {etapas.map((e, etapaIndex) => {
           const termoBuscaEtapa = buscasPorEtapa[e.id] || "";
           const filtradasParaEstaEtapa = obterCpusFiltradas(termoBuscaEtapa);
+          const insumosParaEstaEtapa = obterInsumosFiltrados(termoBuscaEtapa);
           const activeIndex = activeIndices[e.id] !== undefined ? activeIndices[e.id] : -1;
           const etapaRecolhida = !!etapasRecolhidas[e.id];
           const totalEtapa = itensAtivosDaEtapa(e).reduce(
@@ -5111,7 +5169,14 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                   
                   {termoBuscaEtapa.trim() && (
                     <div className="absolute left-0 right-0 top-full bg-white border border-stone-200 rounded-b-lg shadow-xl mt-1 z-50 max-h-[350px] overflow-y-auto text-xs">
-                      {filtradasParaEstaEtapa.length === 0 && <p className="p-3 text-stone-400">Nenhuma composição encontrada.</p>}
+                      {filtradasParaEstaEtapa.length === 0 && insumosParaEstaEtapa.length === 0 && (
+                        <p className="p-3 text-stone-400">Nenhuma CPU ou insumo encontrado.</p>
+                      )}
+                      {filtradasParaEstaEtapa.length > 0 && (
+                        <div className="px-2.5 py-1.5 bg-stone-100 border-b border-stone-200 text-[10px] font-semibold uppercase text-stone-500">
+                          CPUs pelo nome ou código
+                        </div>
+                      )}
                       {filtradasParaEstaEtapa.map((c, index) => (
                         <div 
                           key={c.id} 
@@ -5135,6 +5200,22 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                           </span>
                         </div>
                       ))}
+                      {insumosParaEstaEtapa.length > 0 && (
+                        <>
+                          <div className="px-2.5 py-1.5 bg-stone-100 border-y border-stone-200 text-[10px] font-semibold uppercase text-stone-500">
+                            Insumos encontrados
+                          </div>
+                          {insumosParaEstaEtapa.map((insumo) => (
+                            <div key={insumo.key || insumo.id} className="p-2 border-b border-stone-100 last:border-0 flex items-center gap-2 bg-stone-50/50">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-white border border-stone-200 text-stone-500 shrink-0">
+                                {insumo.tipo || "INS"}
+                              </span>
+                              <span className="flex-1 min-w-0 truncate text-stone-700" title={insumo.descricao}>{insumo.descricao}</span>
+                              <span className="font-mono text-[10px] text-stone-400 shrink-0">{insumo.unidade || "un"}</span>
+                            </div>
+                          ))}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

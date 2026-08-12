@@ -51,45 +51,13 @@ export const insumosResolvidosSubCpu = (insumo, subCpu) =>
     : (subCpu?.insumos || []);
 
 export const criarIndiceBuscaCpus = (cpusArray = []) => {
-  const memo = new Map();
-  const emProcessamento = new Set();
-
-  const textoDaCpu = (cpu) => {
-    if (!cpu) return "";
-    const chave = cpu.id || cpu;
-    if (memo.has(chave)) return memo.get(chave);
-
-    const textoProprio = [
-      cpu.codigo,
-      cpu.descricao,
-      cpu.fonte,
-      ...(cpu.insumos || []).flatMap((insumo) => [
-        insumo.codigo,
-        insumo.descricao,
-        insumo.tipo,
-        insumo.unidade,
-      ]),
-    ];
-
-    if (emProcessamento.has(chave)) {
-      return normalizarBusca(textoProprio.filter(Boolean).join(" "));
-    }
-
-    emProcessamento.add(chave);
-    (cpu.insumos || []).forEach((insumo) => {
-      const subCpu = findSubCpu(insumo, cpusArray);
-      if (subCpu) textoProprio.push(textoDaCpu(subCpu));
-    });
-    emProcessamento.delete(chave);
-
-    const texto = normalizarBusca(textoProprio.filter(Boolean).join(" "));
-    memo.set(chave, texto);
-    return texto;
-  };
-
   return (cpusArray || []).map((cpu) => ({
     cpu,
-    haystack: textoDaCpu(cpu),
+    // A busca de CPU considera apenas sua própria identificação. Insumos são
+    // pesquisados e apresentados separadamente para evitar resultados ambíguos.
+    haystack: normalizarBusca(
+      [cpu.codigo, cpu.descricao, cpu.fonte].filter(Boolean).join(" ")
+    ),
   }));
 };
 
