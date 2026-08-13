@@ -5555,7 +5555,7 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
                 <BdiInput
                   label="Retenção de INSS (somente MO)"
                   value={bdi.retencaoInss || 0}
-                  amount={bdiCalc.retencaoInssValorBase}
+                  amount={bdiCalc.retencaoInssValor}
                   onChange={(v) => handleGeralChange("retencaoInss", v)}
                   maxPercent={99}
                 />
@@ -5626,7 +5626,7 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
                   </div>
                   <div className="flex justify-between text-amber-300">
                     <span>Compensação INSS ({fmt(bdiCalc.retencaoInss * 100)}%):</span>
-                    <span className="font-mono">R$ {fmt(bdiCalc.retencaoInssValorBase)}</span>
+                    <span className="font-mono">R$ {fmt(bdiCalc.retencaoInssValor)}</span>
                   </div>
                 </>
               )}
