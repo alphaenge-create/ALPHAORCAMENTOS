@@ -2800,51 +2800,6 @@ export default function App() {
                   Recolher Tudo
                 </button>
 
-                {/* EXCEL DA PLANILHA DE VENDA (CORRIGIDO PARA LER O BDI DE MATERIAIS) */}
-                <button 
-                  onClick={() => {
-                    const data = [];
-                    data.push(["ESTRUTURA", "DESCRIÇÃO", "UND", "QTD PROP.", "PREÇO UNIT VENDA", "TOTAL VENDA"]);
-                    etapas.forEach((etapa, idxE) => {
-                      let totalEtapaVenda = 0;
-                      itensAtivosDaEtapa(etapa).forEach(it => {
-                        const qCpu = num(it.quantidade);
-                        (it.insumos || []).forEach(ins => {
-                          const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
-                          totalEtapaVenda += cIn * fatorVendaInsumo(ins, bdiCalc);
-                        });
-                      });
-
-                      data.push([`${idxE + 1}`, etapa.nome, "", "", "", totalEtapaVenda]);
-                      
-                      itensAtivosDaEtapa(etapa).forEach((item, idxI) => {
-                        const numCpu = `${idxE + 1}.${idxI + 1}`;
-                        let totalItemVenda = 0;
-                        (item.insumos || []).forEach(ins => {
-                          const cIn = num(ins.coeficiente) * num(item.quantidade) * insumoValorUnitario(ins, cpus, catalogMap);
-                          totalItemVenda += cIn * fatorVendaInsumo(ins, bdiCalc);
-                        });
-
-                        data.push([numCpu, item.servico || item.descricao, item.unidade, num(item.quantidade), totalItemVenda / num(item.quantidade), totalItemVenda]);
-                        
-                        (item.insumos || []).forEach((ins, idxIn) => {
-                          const custoUnit = insumoValorUnitario(ins, cpus, catalogMap);
-                          const fatBdi = fatorVendaInsumo(ins, bdiCalc);
-                          
-                          data.push([`${numCpu}.${idxIn + 1}`, `[${ins.tipo}] ${ins.descricao}`, ins.unidade || "un", num(ins.coeficiente) * num(item.quantidade), custoUnit * fatBdi, (num(ins.coeficiente) * num(item.quantidade)) * custoUnit * fatBdi]);
-                        });
-                      });
-                    });
-                    const ws = XLSX.utils.aoa_to_sheet(data);
-                    const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, ws, "Preço de Venda");
-                    XLSX.writeFile(wb, `${projetoAtivo.nome || "Orcamento"}_Preco_Venda.xlsx`);
-                  }}
-                  className="px-2 py-1 text-[11px] font-medium border border-emerald-200 text-emerald-700 bg-emerald-50/50 rounded hover:bg-emerald-50 flex items-center gap-1"
-                >
-                  <Download size={12} /> Excel (.xlsx)
-                </button>
-
                 <button
                   onClick={() =>
                     exportarPropostaXlsx({
@@ -2955,28 +2910,6 @@ export default function App() {
                   <Download size={12} /> Proposta PDF
                 </button>
 
-                {/* PDF LIMPO DA PLANILHA DE VENDA */}
-                <button 
-                  onClick={() => {
-                    const tituloOriginal = document.title;
-                    document.title = `${projetoAtivo.nome || "Orcamento"}_Preco_Venda`;
-                    const estiloPrint = document.createElement("style");
-                    estiloPrint.innerHTML = `
-                      @media print {
-                        body * { visibility: hidden; }
-                        #area-planilha-venda, #area-planilha-venda * { visibility: visible; }
-                        #area-planilha-venda { position: absolute; left: 0; top: 0; width: 100%; background: white !important; }
-                      }
-                    `;
-                    document.head.appendChild(estiloPrint);
-                    window.print();
-                    document.head.removeChild(estiloPrint);
-                    document.title = tituloOriginal;
-                  }}
-                  className="px-2 py-1 text-[11px] font-medium border border-red-200 text-red-700 bg-red-50/50 rounded hover:bg-red-50 flex items-center gap-1"
-                >
-                  <Download size={12} /> PDF (.pdf)
-                </button>
               </div>
             </div>
 
