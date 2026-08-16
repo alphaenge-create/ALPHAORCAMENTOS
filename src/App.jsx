@@ -77,6 +77,7 @@ const CLIENTE_PADRAO = {
   prazoExecucao: "",
   condicoesPagamento: "",
   percentualSinalCollem: 20,
+  prazoExecucaoCollem: "",
   textoApresentacaoCollem: "",
   naoInclusosCollem: "",
   condicoesEspeciaisCollem: "",
@@ -3522,7 +3523,14 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
                   Campos vazios usarão os textos padrão do modelo oficial.
                 </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <CampoCliente
+                  label="Prazo de execução COLLEM"
+                  value={cliente.prazoExecucaoCollem || ""}
+                  onChange={(valor) => atualizarCampo("prazoExecucaoCollem", valor)}
+                  icon={<FileText size={14} />}
+                  placeholder="Ex.: 60 dias úteis"
+                />
                 <CampoCliente
                   label="Sinal de negócio (%)"
                   value={cliente.percentualSinalCollem ?? 20}

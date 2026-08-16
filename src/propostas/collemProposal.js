@@ -211,7 +211,10 @@ const dadosProposta = ({ projeto, cliente = {}, totalGeral }) => {
   const condicoesPagamento =
     String(cliente.condicoesPagamento || "").trim() ||
     `Sinal de negócio: ${formatarPercentual(percentualSinal)}% do valor do item A acima (R$ ${formatarMoeda(valorSinal)} - ${moedaPorExtenso(valorSinal)}) na assinatura do contrato. O restante em pagamentos conforme medições mensais.`;
-  const prazo = String(cliente.prazoExecucao || "").trim() || "A definir conforme cronograma aprovado entre as partes.";
+  const prazo =
+    String(cliente.prazoExecucaoCollem || "").trim() ||
+    String(cliente.prazoExecucao || "").trim() ||
+    "A definir conforme cronograma aprovado entre as partes.";
   const naoInclusos =
     String(cliente.naoInclusosCollem || "").trim() || textoRegimeMateriais(cliente);
   const condicoesEspeciais =
