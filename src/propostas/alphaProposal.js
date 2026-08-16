@@ -24,7 +24,10 @@ const VERDE_CLARO = "E2EFD9";
 const CINZA = "A6A6A6";
 const BRANCO = "FFFFFF";
 const PRETO = "111111";
-const FONTE = "Arial Narrow";
+const FONTE = "Calibri";
+const LARGURA_PAGINA = 11906;
+const LARGURA_CONTEUDO = 10490;
+const MARGEM_ESQUERDA = 709;
 const SEM_BORDA = { style: BorderStyle.NONE, size: 0, color: BRANCO };
 const BORDAS_LIMPAS = {
   top: SEM_BORDA,
@@ -71,7 +74,7 @@ const run = (texto, opcoes = {}) =>
   new TextRun({
     text: String(texto ?? ""),
     font: FONTE,
-    size: opcoes.size || 24,
+    size: opcoes.size || 22,
     bold: opcoes.bold,
     color: opcoes.color || PRETO,
   });
@@ -131,23 +134,32 @@ const celula = (conteudo, opcoes = {}) =>
 
 const faixa = () =>
   new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: LARGURA_PAGINA, type: WidthType.DXA },
+    indent: { size: -MARGEM_ESQUERDA, type: WidthType.DXA },
+    columnWidths: [LARGURA_PAGINA],
     borders: BORDAS_LIMPAS,
     rows: [
       new TableRow({
-        children: [celula("", { fill: VERDE, borders: BORDAS_LIMPAS, size: 2 })],
-        height: { value: 180, rule: "atLeast" },
+        children: [celula("", { fill: VERDE, borders: BORDAS_LIMPAS, size: 2, width: LARGURA_PAGINA })],
+        height: { value: 450, rule: "atLeast" },
       }),
     ],
+  });
+
+const separadorTabelas = () =>
+  new Paragraph({
+    children: [run("", { size: 2 })],
+    spacing: { before: 0, after: 0, line: 2 },
   });
 
 const criarCabecalho = (logo, numeroProposta) =>
   new Header({
     children: [
       faixa(),
+      separadorTabelas(),
       new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        columnWidths: [6800, 2800],
+        width: { size: LARGURA_CONTEUDO, type: WidthType.DXA },
+        columnWidths: [7500, 2990],
         borders: BORDAS_LIMPAS,
         rows: [
           new TableRow({
@@ -158,11 +170,11 @@ const criarCabecalho = (logo, numeroProposta) =>
                     children: [
                       new ImageRun({
                         data: logo,
-                        transformation: { width: 112, height: 86 },
+                        transformation: { width: 96, height: 74 },
                         type: "png",
                       }),
                     ],
-                    spacing: { before: 120, after: 60 },
+                    spacing: { before: 240, after: 60 },
                   }),
                 ],
                 borders: BORDAS_LIMPAS,
@@ -190,8 +202,8 @@ const criarRodape = () =>
   new Footer({
     children: [
       new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        columnWidths: [7200, 2400],
+        width: { size: LARGURA_CONTEUDO, type: WidthType.DXA },
+        columnWidths: [7700, 2790],
         borders: BORDAS_LIMPAS,
         rows: [
           new TableRow({
@@ -200,11 +212,19 @@ const criarRodape = () =>
                 borders: BORDAS_LIMPAS,
                 children: [
                   new Paragraph({
-                    children: [run("ALPHA ENGENHARIA E SERVIÇOS", { bold: true, size: 18, color: CINZA })],
+                    children: [run("ALPHA ENGENHARIA E SERVIÇOS", { bold: true, size: 20, color: CINZA })],
                     spacing: { after: 0 },
                   }),
                   new Paragraph({
-                    children: [run("Rua José Da Costa, 116 - São João Batista | Belo Horizonte | Telefone: 31 9 9203-1783", { size: 18, color: CINZA })],
+                    children: [run("Rua José Da Costa, 116 – São João Batista", { size: 20, color: CINZA })],
+                    spacing: { after: 0 },
+                  }),
+                  new Paragraph({
+                    children: [run("Belo Horizonte", { size: 20, color: CINZA })],
+                    spacing: { after: 0 },
+                  }),
+                  new Paragraph({
+                    children: [run("Telefone: 31 9 9203-1783", { size: 20, color: CINZA })],
                     spacing: { after: 0 },
                   }),
                 ],
@@ -218,7 +238,7 @@ const criarRodape = () =>
                       new TextRun({
                         children: ["Página ", PageNumber.CURRENT, " de ", PageNumber.TOTAL_PAGES],
                         font: FONTE,
-                        size: 18,
+                        size: 20,
                         color: CINZA,
                       }),
                     ],
@@ -231,6 +251,7 @@ const criarRodape = () =>
           }),
         ],
       }),
+      separadorTabelas(),
       faixa(),
     ],
   });
@@ -264,17 +285,31 @@ const criarTabelaAlternativas = (comparativos) => {
     )
   );
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: LARGURA_CONTEUDO, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
-    columnWidths: [2900, 2600, 1900, 2200],
+    columnWidths: [3100, 2800, 2050, 2540],
     borders: BORDAS_TABELA,
     rows: linhas,
   });
 };
 
 const criarTabelaValores = (grupos, totalGeral) => {
-  const larguras = [650, 4000, 700, 850, 1050, 1050, 1300];
+  const larguras = [680, 4380, 730, 870, 1130, 1130, 1570];
   const linhas = [
+    new TableRow({
+      tableHeader: true,
+      cantSplit: true,
+      children: [
+        celula("PLANILHA DE MATERIAL", {
+          columnSpan: 7,
+          fill: VERDE,
+          color: BRANCO,
+          bold: true,
+          size: 22,
+          alignment: AlignmentType.CENTER,
+        }),
+      ],
+    }),
     new TableRow({
       tableHeader: true,
       cantSplit: true,
@@ -334,7 +369,7 @@ const criarTabelaValores = (grupos, totalGeral) => {
   );
 
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: LARGURA_CONTEUDO, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
     columnWidths: larguras,
     borders: BORDAS_TABELA,
@@ -350,7 +385,7 @@ export const criarPropostaAlphaDocxBlob = async (dados, opcoes = {}) => {
   const dataHoje = hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
   const grupos = dados.grupos || [];
   const totalGeral = Number(dados.totalGeral || 0);
-  const conteudo = [
+  const abertura = [
     paragrafo([run("PROPOSTA DE PRESTAÇÃO DE SERVIÇOS", { bold: true, size: 32 })], {
       alignment: AlignmentType.CENTER,
       before: 80,
@@ -363,7 +398,9 @@ export const criarPropostaAlphaDocxBlob = async (dados, opcoes = {}) => {
     paragrafo([run("Endereço da Obra: ", { bold: true }), run(dados.localObra || "")], { alignment: AlignmentType.LEFT, after: 220 }),
     tituloSecao("Escopo do Serviço:", { before: 0, after: 80 }),
     ...grupos.map((grupo) => itemLista(grupo.nome, { bold: true, after: 75, line: 290 })),
-    tituloSecao("Responsabilidade da ALPHA ENGENHARIA:", { before: 0, pageBreakBefore: true }),
+  ];
+  const corpo = [
+    tituloSecao("Responsabilidade da ALPHA ENGENHARIA:", { before: 1050, pageBreakBefore: true }),
     ...(dados.responsabilidadesAlpha || []).map((item) => itemLista(item)),
     tituloSecao("Responsabilidade do Cliente:"),
     ...(dados.responsabilidadesCliente || []).map((item) => itemLista(item)),
@@ -377,22 +414,23 @@ export const criarPropostaAlphaDocxBlob = async (dados, opcoes = {}) => {
   ];
 
   if ((dados.comparativos || []).length) {
-    conteudo.push(tituloSecao("ALTERNATIVAS TÉCNICAS"));
-    conteudo.push(criarTabelaAlternativas(dados.comparativos));
+    corpo.push(tituloSecao("ALTERNATIVAS TÉCNICAS"));
+    corpo.push(criarTabelaAlternativas(dados.comparativos));
   }
 
-  conteudo.push(tituloSecao("PLANILHA DE MATERIAL"));
-  conteudo.push(criarTabelaValores(grupos, totalGeral));
-  conteudo.push(tituloSecao("Condições de pagamento:", { before: 1050, pageBreakBefore: true }));
-  conteudo.push(paragrafo(dados.condicoesPagamento || "A definir entre as partes."));
-  conteudo.push(paragrafo("Pagamento via PIX (52.903.822/0001-86) 5 dias após a emissão da NF."));
-  conteudo.push(tituloSecao("Prazo para Execução:"));
-  conteudo.push(itemLista(dados.prazoExecucao || "A definir conforme cronograma aprovado entre as partes."));
+  corpo.push(criarTabelaValores(grupos, totalGeral));
+  const fechamento = [
+    tituloSecao("Condições de pagamento:", { before: 1050, pageBreakBefore: true }),
+    paragrafo(dados.condicoesPagamento || "A definir entre as partes."),
+    paragrafo("Pagamento via PIX (52.903.822/0001-86) 5 dias após a emissão da NF."),
+    tituloSecao("Prazo para Execução:"),
+    itemLista(dados.prazoExecucao || "A definir conforme cronograma aprovado entre as partes."),
+  ];
   if (dados.observacoes) {
-    conteudo.push(tituloSecao("Observações:"));
-    String(dados.observacoes).split(/\r?\n/).filter(Boolean).forEach((linha) => conteudo.push(paragrafo(linha)));
+    fechamento.push(tituloSecao("Observações:"));
+    String(dados.observacoes).split(/\r?\n/).filter(Boolean).forEach((linha) => fechamento.push(paragrafo(linha)));
   }
-  conteudo.push(
+  fechamento.push(
     new Paragraph({
       children: [run("ALPHA ENGENHARIA E SERVIÇOS", { bold: true })],
       alignment: AlignmentType.CENTER,
@@ -404,11 +442,12 @@ export const criarPropostaAlphaDocxBlob = async (dados, opcoes = {}) => {
 
   const documento = new Document({
     features: { updateFields: true },
+    evenAndOddHeaderAndFooters: true,
     styles: {
       default: {
         document: {
-          run: { font: FONTE, size: 24, color: PRETO },
-          paragraph: { spacing: { line: 300 } },
+          run: { font: FONTE, size: 22, color: PRETO },
+          paragraph: { spacing: { line: 276 } },
         },
       },
     },
@@ -418,18 +457,24 @@ export const criarPropostaAlphaDocxBlob = async (dados, opcoes = {}) => {
           page: {
             size: { width: 11906, height: 16838 },
             margin: {
-              top: 1701,
-              right: 709,
-              bottom: 1417,
-              left: 709,
+              top: 1843,
+              right: 707,
+              bottom: 851,
+              left: MARGEM_ESQUERDA,
               header: 0,
               footer: 0,
             },
           },
         },
-        headers: { default: criarCabecalho(logo, dados.numeroProposta || "") },
-        footers: { default: criarRodape() },
-        children: conteudo,
+        headers: {
+          default: criarCabecalho(logo, dados.numeroProposta || ""),
+          even: criarCabecalho(logo, dados.numeroProposta || ""),
+        },
+        footers: {
+          default: criarRodape(),
+          even: criarRodape(),
+        },
+        children: [...abertura, ...corpo, ...fechamento],
       },
     ],
   });
