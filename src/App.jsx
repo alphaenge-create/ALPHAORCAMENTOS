@@ -326,6 +326,24 @@ const nomeArquivoSeguro = (valor) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const proximoNumeroProposta = (projetos = [], data = new Date()) => {
+  const anoCompleto = data.getFullYear();
+  const anoCurto = String(anoCompleto).slice(-2);
+  let maiorSequencia = 0;
+
+  (projetos || []).forEach((projeto) => {
+    const numeroAtual = String(projeto?.clienteCadastro?.numeroProposta || "").trim();
+    const match = numeroAtual.match(/(\d+)\s*[\/-]\s*(\d{2}|\d{4})\s*$/);
+    if (!match) return;
+
+    const anoNumero = match[2].length === 2 ? Number(`20${match[2]}`) : Number(match[2]);
+    if (anoNumero !== anoCompleto) return;
+    maiorSequencia = Math.max(maiorSequencia, Number(match[1]) || 0);
+  });
+
+  return `PROP - ${String(maiorSequencia + 1).padStart(2, "0")}/${anoCurto}`;
+};
+
 const escapeHtml = (valor) =>
   String(valor ?? "")
     .replace(/&/g, "&amp;")
@@ -650,7 +668,7 @@ const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalog
   XLSX.writeFile(wb, `${nomeArquivoSeguro(projeto.nome)}_${sufixo}.xlsx`);
 };
 
-const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
+const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap, numeroPropostaAutomatico }) => {
   const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, cliente);
   const comparativos = montarComparativosProposta(
     etapas,
@@ -662,7 +680,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
   const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
   const hoje = new Date();
   const dataHoje = hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
-  const numeroProposta = cliente?.numeroProposta || `PROP - ${String(hoje.getMonth() + 1).padStart(2, "0")}/${String(hoje.getFullYear()).slice(-2)}`;
+  const numeroProposta = cliente?.numeroProposta || numeroPropostaAutomatico || `PROP - 01/${String(hoje.getFullYear()).slice(-2)}`;
   const nomeProjeto = projeto?.nome || "Orçamento";
   const nomeCliente = cliente?.nome || "Cliente";
   const localObra = cliente?.local || cliente?.endereco || "";
@@ -682,23 +700,8 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
         : "Materiais considerados com faturamento direto para o cliente, aplicando BDI específico de materiais quando configurado."
       : "Materiais inclusos no fornecimento da ALPHA ENGENHARIA conforme composição do orçamento.";
 
-  const linhasEscopo = grupos
-    .map((grupo) => `
-      <tr class="grupo">
-        <td>${escapeHtml(grupo.numero)}.</td>
-        <td>${escapeHtml(grupo.nome)}</td>
-        <td></td>
-        <td></td>
-      </tr>
-      ${grupo.itens.map((item) => `
-        <tr>
-          <td>${escapeHtml(item.numero)}</td>
-          <td>${escapeHtml(item.descricao)}</td>
-          <td>${escapeHtml(item.unidade)}</td>
-          <td>${fmt(item.quantidade)}</td>
-        </tr>
-      `).join("")}
-    `)
+  const itensEscopo = grupos
+    .map((grupo) => `<li>${escapeHtml(grupo.nome)}</li>`)
     .join("");
 
   const linhasValores = grupos
@@ -755,9 +758,10 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     * { box-sizing: border-box; }
     :root { --alpha: #7f985c; --alpha-dark: #4f6339; --alpha-soft: #e7efd9; --line: #c6d4b1; }
     body { margin: 0; font-family: Calibri, "Aptos", Arial, sans-serif; color: #111; font-size: 11pt; }
-    .page { min-height: 263.5mm; page-break-after: always; position: relative; display: flex; flex-direction: column; }
+    .page { height: 263.5mm; page-break-after: always; break-after: page; position: relative; display: flex; flex-direction: column; }
+    .page + .page { page-break-before: always; break-before: page; }
     .page:last-child { page-break-after: auto; }
-    header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10mm; border-bottom: 1pt solid var(--alpha); padding-bottom: 3mm; }
+    header { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: flex-start; margin-bottom: 10mm; border-bottom: 1pt solid var(--alpha); padding-bottom: 3mm; page-break-inside: avoid; break-inside: avoid; }
     .logo { width: 18mm; height: 18mm; object-fit: contain; display: block; }
     .prop { font-weight: 700; font-size: 11pt; text-align: right; color: var(--alpha-dark); padding-top: 2mm; }
     .pagina-topo { display: none; }
@@ -770,10 +774,8 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     th { background: var(--alpha); color: #fff; font-weight: 700; text-align: left; }
     th, td { padding: 3px 4px; vertical-align: middle; border-bottom: 0.4pt solid #ececec; }
     tbody tr { page-break-inside: avoid; }
-    .escopo th:nth-child(1), .escopo td:nth-child(1) { width: 9%; }
-    .escopo th:nth-child(2), .escopo td:nth-child(2) { width: 67%; }
-    .escopo th:nth-child(3), .escopo td:nth-child(3) { width: 10%; text-align: center; }
-    .escopo th:nth-child(4), .escopo td:nth-child(4) { width: 14%; text-align: right; }
+    .escopo-lista { margin: 4px 0 12px 22px; padding: 0; font-size: 11pt; line-height: 1.35; }
+    .escopo-lista li { margin: 0 0 5px; padding-left: 2px; font-weight: 600; text-align: left; }
     .valores th:nth-child(1), .valores td:nth-child(1) { width: 8%; }
     .valores th:nth-child(2), .valores td:nth-child(2) { width: 42%; }
     .valores th:nth-child(3), .valores td:nth-child(3) { width: 8%; text-align: center; }
@@ -792,7 +794,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     ul { margin: 0 0 12px 18px; padding: 0; line-height: 1.15; }
     li { margin: 0 0 4px; text-align: justify; }
     .assinatura { margin-top: 48px; width: 260px; border-top: 1px solid var(--alpha-dark); text-align: center; padding-top: 6px; color: var(--alpha-dark); font-weight: 700; }
-    .footer { margin-top: auto; padding-top: 10mm; font-size: 11pt; color: #111; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; page-break-inside: avoid; break-inside: avoid; }
+    .footer { flex: 0 0 auto; margin-top: auto; padding-top: 10mm; font-size: 11pt; color: #111; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; page-break-inside: avoid; break-inside: avoid; }
     .footer strong { display: block; font-weight: 700; margin-bottom: 0; color: var(--alpha-dark); }
     .footer .endereco { line-height: 1.15; }
     .footer .pagina { white-space: nowrap; color: var(--alpha-dark); font-weight: 700; }
@@ -815,10 +817,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap 
     <p class="ref">Ref. ${escapeHtml(nomeProjeto)}</p>
     <p><strong>Endereço da Obra:</strong> ${escapeHtml(localObra)}</p>
     <h2>Escopo do Serviço:</h2>
-    <table class="escopo">
-      <thead><tr><th>ITEM</th><th>DESCRIÇÃO DOS SERVIÇOS</th><th>UNID.</th><th>QUANT.</th></tr></thead>
-      <tbody>${linhasEscopo}</tbody>
-    </table>
+    <ul class="escopo-lista">${itensEscopo}</ul>
     <div class="footer">
       <div class="endereco"><strong>ALPHA ENGENHARIA E SERVIÇOS</strong>Rua José Da Costa, 116 - São João Batista<br/>Belo Horizonte<br/>Telefone: 31 9 9203-1783</div>
       <div class="pagina">Página 1 de 3</div>
@@ -2035,15 +2034,17 @@ export default function App() {
               <button
                 onClick={() => {
                   const pId = uid();
-                  setProjetos((prev) => [
-                    ...prev,
-                    {
+                  setProjetos((prev) => {
+                    const numeroProposta = proximoNumeroProposta(prev);
+                    return [
+                      ...prev,
+                      {
                       id: pId,
                       nome: `Novo Orçamento - ${prev.length + 1}`,
                       criadoEm: new Date().toISOString(),
                       atualizadoEm: "",
                       cliente: "",
-                      clienteCadastro: { ...CLIENTE_PADRAO },
+                      clienteCadastro: { ...CLIENTE_PADRAO, numeroProposta },
                       etapas: [{ id: uid(), nome: "Etapa Inicial", itens: [] }],
                       precos: [],
                       bancoPrecosInicializado: true,
@@ -2069,8 +2070,9 @@ export default function App() {
                         collemY: 1,
                         materiais: { admCentral: 0, contabilidade: 0, contingenciamento: 0, custoFinanceiro: 0, lucro: 0, dasAnexoIV: 0, art: 0 }
                       }
-                    }
-                  ]);
+                      },
+                    ];
+                  });
                   setProjetoAtivoId(pId);
                   setTab("cliente");
                 }}
@@ -2741,7 +2743,11 @@ export default function App() {
                   type="button"
                   role="radio"
                   aria-checked={modeloPropostaAtivo === "alpha"}
-                  onClick={() => setClienteAtivo((prev) => ({ ...prev, modeloProposta: "alpha" }))}
+                  onClick={() => setClienteAtivo((prev) => ({
+                    ...prev,
+                    modeloProposta: "alpha",
+                    numeroProposta: prev.numeroProposta || proximoNumeroProposta(projetos),
+                  }))}
                   className={`flex-1 sm:flex-none px-4 py-2 text-xs font-semibold ${
                     modeloPropostaAtivo === "alpha"
                       ? "bg-[#789654] text-white"
@@ -2889,13 +2895,18 @@ export default function App() {
                       });
                       return;
                     }
+                    const numeroProposta = clienteAtivo.numeroProposta || proximoNumeroProposta(projetos);
+                    if (!clienteAtivo.numeroProposta) {
+                      setClienteAtivo((prev) => ({ ...prev, numeroProposta }));
+                    }
                     gerarPropostaPdf({
                       projeto: projetoAtivo,
-                      cliente: clienteAtivo,
+                      cliente: { ...clienteAtivo, numeroProposta },
                       etapas,
                       bdiCalc,
                       cpus,
                       catalogMap,
+                      numeroPropostaAutomatico: numeroProposta,
                     });
                   }}
                   disabled={!modeloPropostaAtivo}
@@ -3484,7 +3495,7 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <CampoCliente
-              label="Número da proposta"
+              label="Número da proposta (automático)"
               value={cliente.numeroProposta || ""}
               onChange={(valor) => atualizarCampo("numeroProposta", valor)}
               icon={<FileText size={14} />}
