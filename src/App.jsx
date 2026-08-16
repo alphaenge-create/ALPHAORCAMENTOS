@@ -445,6 +445,35 @@ const estiloVendaTotal = {
   alignment: { horizontal: "center", vertical: "center" },
 };
 
+const estiloVendaCollemBase = {
+  font: { name: "Calibri", sz: 11 },
+  alignment: { vertical: "center" },
+};
+
+const estiloVendaCollemTitulo = {
+  font: { name: "Calibri", sz: 14, bold: true, color: { rgb: "FFFFFF" } },
+  fill: { fgColor: { rgb: "538DD5" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+};
+
+const estiloVendaCollemCabecalho = {
+  font: { name: "Calibri", sz: 12, bold: true },
+  fill: { fgColor: { rgb: "DCE6F1" } },
+  alignment: { vertical: "center" },
+};
+
+const estiloVendaCollemGrupo = {
+  font: { name: "Calibri", sz: 12, bold: true },
+  fill: { fgColor: { rgb: "C5D9F1" } },
+  alignment: { vertical: "center" },
+};
+
+const estiloVendaCollemTotal = {
+  font: { name: "Calibri", sz: 12, bold: true, color: { rgb: "FFFFFF" } },
+  fill: { fgColor: { rgb: "538DD5" } },
+  alignment: { horizontal: "center", vertical: "center" },
+};
+
 const aplicarEstiloLinha = (ws, row, startCol, endCol, style) => {
   for (let col = startCol; col <= endCol; col += 1) {
     const addr = XLSX.utils.encode_cell({ r: row - 1, c: col - 1 });
@@ -460,7 +489,34 @@ const aplicarFormatoNumerico = (ws, row, cols, formato) => {
   });
 };
 
-const criarAbaVendaModelo = (grupos, fatorVenda = 1) => {
+const aplicarAlinhamento = (ws, row, cols, alignment) => {
+  cols.forEach((col) => {
+    const addr = XLSX.utils.encode_cell({ r: row - 1, c: col - 1 });
+    if (!ws[addr]) return;
+    ws[addr].s = {
+      ...(ws[addr].s || {}),
+      alignment: { ...(ws[addr].s?.alignment || {}), ...alignment },
+    };
+  });
+};
+
+const criarAbaVendaModelo = (grupos, fatorVenda = 1, modelo = "alpha") => {
+  const collem = modelo === "collem";
+  const estilos = collem
+    ? {
+        base: estiloVendaCollemBase,
+        titulo: estiloVendaCollemTitulo,
+        cabecalho: estiloVendaCollemCabecalho,
+        grupo: estiloVendaCollemGrupo,
+        total: estiloVendaCollemTotal,
+      }
+    : {
+        base: estiloVendaBase,
+        titulo: estiloVendaTitulo,
+        cabecalho: estiloVendaCabecalho,
+        grupo: estiloVendaGrupo,
+        total: estiloVendaTotal,
+      };
   const rows = [[], [null, "PLANILHA DE MATERIAL"], [null, "ITEM", "DESCRIÇÃO DOS SERVIÇOS", "UNID.", "QUANT.", "VALOR UNIT.", "VALOR TOTAL", "TOTAL DO ITEM", fatorVenda, 250, 150]];
   const groupRows = [];
   const itemRows = [];
@@ -506,22 +562,31 @@ const criarAbaVendaModelo = (grupos, fatorVenda = 1) => {
   ];
 
   ws["!rows"] = rows.map(() => ({ hpt: 14.25 }));
-  aplicarEstiloLinha(ws, 2, 2, 8, estiloVendaTitulo);
-  aplicarEstiloLinha(ws, 3, 2, 8, estiloVendaCabecalho);
+  aplicarEstiloLinha(ws, 2, 2, 8, estilos.titulo);
+  aplicarEstiloLinha(ws, 3, 2, 8, estilos.cabecalho);
+  aplicarAlinhamento(ws, 3, [2, 4, 5, 6, 7, 8], { horizontal: "center" });
+  aplicarAlinhamento(ws, 3, [3], { horizontal: "left", wrapText: true });
   aplicarFormatoNumerico(ws, 3, [8], XLSX_MOEDA);
   aplicarFormatoNumerico(ws, 3, [9], "0.00");
 
   groupRows.forEach(({ row }) => {
-    aplicarEstiloLinha(ws, row, 2, 8, estiloVendaGrupo);
+    aplicarEstiloLinha(ws, row, 2, 8, estilos.grupo);
+    aplicarAlinhamento(ws, row, [2, 4, 5], { horizontal: "center" });
+    aplicarAlinhamento(ws, row, [3], { horizontal: "left", wrapText: true });
+    aplicarAlinhamento(ws, row, [8], { horizontal: "right" });
     aplicarFormatoNumerico(ws, row, [8], XLSX_MOEDA);
   });
 
   itemRows.forEach((row) => {
-    aplicarEstiloLinha(ws, row, 2, 8, estiloVendaBase);
-    aplicarFormatoNumerico(ws, row, [5, 6, 7], XLSX_NUMERO);
+    aplicarEstiloLinha(ws, row, 2, 8, estilos.base);
+    aplicarAlinhamento(ws, row, [2, 4, 5], { horizontal: "center" });
+    aplicarAlinhamento(ws, row, [3], { horizontal: "left", wrapText: true });
+    aplicarAlinhamento(ws, row, [6, 7, 8], { horizontal: "right" });
+    aplicarFormatoNumerico(ws, row, [5], XLSX_NUMERO);
+    aplicarFormatoNumerico(ws, row, [6, 7, 8], collem ? XLSX_MOEDA : XLSX_NUMERO);
   });
 
-  aplicarEstiloLinha(ws, totalRow, 2, 8, estiloVendaTotal);
+  aplicarEstiloLinha(ws, totalRow, 2, 8, estilos.total);
   aplicarFormatoNumerico(ws, totalRow, [8], XLSX_MOEDA);
 
   return ws;
@@ -537,7 +602,7 @@ const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalog
     cliente
   );
   const wb = XLSX.utils.book_new();
-  const wsValores = criarAbaVendaModelo(grupos, bdiCalc?.FatorBdi || 1);
+  const wsValores = criarAbaVendaModelo(grupos, bdiCalc?.FatorBdi || 1, modelo);
   XLSX.utils.book_append_sheet(wb, wsValores, "VENDA");
   if (comparativos.length > 0) {
     const linhas = [["ETAPA", "GRUPO", "ALTERNATIVA", "SELECIONADA", "TOTAL DA PROPOSTA"]];
