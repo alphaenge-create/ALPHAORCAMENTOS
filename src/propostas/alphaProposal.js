@@ -400,7 +400,7 @@ export const criarPropostaAlphaDocxBlob = async (dados, opcoes = {}) => {
     ...grupos.map((grupo) => itemLista(grupo.nome, { bold: true, after: 75, line: 290 })),
   ];
   const corpo = [
-    tituloSecao("Responsabilidade da ALPHA ENGENHARIA:", { before: 1050, pageBreakBefore: true }),
+    tituloSecao("Responsabilidade da ALPHA ENGENHARIA:", { before: 200 }),
     ...(dados.responsabilidadesAlpha || []).map((item) => itemLista(item)),
     tituloSecao("Responsabilidade do Cliente:"),
     ...(dados.responsabilidadesCliente || []).map((item) => itemLista(item)),
