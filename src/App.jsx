@@ -755,19 +755,22 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap,
   <meta charset="utf-8" />
   <title>${escapeHtml(nomeArquivoSeguro(nomeProjeto))}_Proposta</title>
   <style>
-    @page { size: A4; margin: 18mm 12.5mm 15mm 12.5mm; }
+    @page { size: A4; margin: 0; }
     * { box-sizing: border-box; }
-    :root { --alpha: #7f985c; --alpha-dark: #4f6339; --alpha-soft: #e7efd9; --line: #c6d4b1; }
-    body { margin: 0; font-family: Calibri, "Aptos", Arial, sans-serif; color: #111; font-size: 11pt; }
-    .page { height: 263.5mm; page-break-after: always; break-after: page; position: relative; display: flex; flex-direction: column; }
+    :root { --alpha: #7B9A56; --alpha-dark: #111111; --alpha-soft: #e2efd9; --line: #c6d4b1; --alpha-gray: #a6a6a6; }
+    body { margin: 0; font-family: "Arial Narrow", Arial, sans-serif; color: #111; font-size: 12pt; }
+    .page { width: 210mm; height: 297mm; padding: 12mm 12.5mm 15mm; page-break-after: always; break-after: page; position: relative; display: flex; flex-direction: column; }
     .page + .page { page-break-before: always; break-before: page; }
     .page:last-child { page-break-after: auto; }
-    header { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: flex-start; margin-bottom: 10mm; border-bottom: 1pt solid var(--alpha); padding-bottom: 3mm; page-break-inside: avoid; break-inside: avoid; }
-    .logo { width: 18mm; height: 18mm; object-fit: contain; display: block; }
-    .prop { font-weight: 700; font-size: 11pt; text-align: right; color: var(--alpha-dark); padding-top: 2mm; }
+    .page::before, .page::after { content: ""; position: absolute; left: 0; right: 0; height: 8mm; background: var(--alpha); }
+    .page::before { top: 0; }
+    .page::after { bottom: 0; }
+    header { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: flex-end; margin-bottom: 6mm; page-break-inside: avoid; break-inside: avoid; }
+    .logo { width: 26mm; height: 20mm; object-fit: contain; display: block; }
+    .prop { font-weight: 700; font-size: 12pt; text-align: right; color: var(--alpha-gray); transform: translateY(7mm); }
     .pagina-topo { display: none; }
-    h1 { text-align: center; font-size: 16pt; line-height: 1.15; margin: 0 0 12mm; font-weight: 700; color: var(--alpha-dark); }
-    h2 { font-size: 11pt; line-height: 1.15; margin: 10px 0 6px; font-weight: 700; color: var(--alpha-dark); }
+    h1 { text-align: center; font-size: 16pt; line-height: 1.15; margin: 0 0 12mm; font-weight: 700; color: #111; }
+    h2 { font-size: 12pt; line-height: 1.15; margin: 10px 0 6px; font-weight: 700; color: #111; }
     p { margin: 0 0 6px; line-height: 1.5; text-align: justify; }
     .data { text-align: right; line-height: 1.15; margin-bottom: 10px; }
     .ref { font-weight: 700; }
@@ -775,7 +778,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap,
     th { background: var(--alpha); color: #fff; font-weight: 700; text-align: left; }
     th, td { padding: 3px 4px; vertical-align: middle; border-bottom: 0.4pt solid #ececec; }
     tbody tr { page-break-inside: avoid; }
-    .escopo-lista { margin: 4px 0 12px 22px; padding: 0; font-size: 11pt; line-height: 1.35; }
+    .escopo-lista { margin: 4px 0 12px 22px; padding: 0; font-size: 12pt; line-height: 1.35; }
     .escopo-lista li { margin: 0 0 5px; padding-left: 2px; font-weight: 600; text-align: left; }
     .valores th:nth-child(1), .valores td:nth-child(1) { width: 8%; }
     .valores th:nth-child(2), .valores td:nth-child(2) { width: 42%; }
@@ -795,13 +798,13 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap,
     ul { margin: 0 0 12px 18px; padding: 0; line-height: 1.15; }
     li { margin: 0 0 4px; text-align: justify; }
     .assinatura { margin-top: 48px; width: 260px; border-top: 1px solid var(--alpha-dark); text-align: center; padding-top: 6px; color: var(--alpha-dark); font-weight: 700; }
-    .footer { flex: 0 0 auto; margin-top: auto; padding-top: 10mm; font-size: 11pt; color: #111; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; page-break-inside: avoid; break-inside: avoid; }
-    .footer strong { display: block; font-weight: 700; margin-bottom: 0; color: var(--alpha-dark); }
+    .footer { flex: 0 0 auto; margin-top: auto; padding-top: 10mm; font-size: 10pt; color: var(--alpha-gray); display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; page-break-inside: avoid; break-inside: avoid; }
+    .footer strong { display: block; font-weight: 700; margin-bottom: 0; color: var(--alpha-gray); }
     .footer .endereco { line-height: 1.15; }
-    .footer .pagina { white-space: nowrap; color: var(--alpha-dark); font-weight: 700; }
+    .footer .pagina { white-space: nowrap; color: var(--alpha-gray); font-weight: 400; }
     @media screen {
       body { background: #eee; padding: 20px; }
-      .page { background: white; width: 210mm; margin: 0 auto 20px; padding: 18mm 12.5mm 15mm; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+      .page { background: white; margin: 0 auto 20px; box-shadow: 0 4px 16px rgba(0,0,0,.12); }
     }
   </style>
 </head>
