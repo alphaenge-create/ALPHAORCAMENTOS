@@ -420,7 +420,7 @@ export const criarPropostaAlphaDocxBlob = async (dados, opcoes = {}) => {
 
   corpo.push(criarTabelaValores(grupos, totalGeral));
   const fechamento = [
-    tituloSecao("Condições de pagamento:", { before: 1050, pageBreakBefore: true }),
+    tituloSecao("Condições de pagamento:", { before: 200 }),
     paragrafo(dados.condicoesPagamento || "A definir entre as partes."),
     paragrafo("Pagamento via PIX (52.903.822/0001-86) 5 dias após a emissão da NF."),
     tituloSecao("Prazo para Execução:"),
