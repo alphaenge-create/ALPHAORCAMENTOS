@@ -329,7 +329,8 @@ const nomeArquivoSeguro = (valor) =>
 const proximoNumeroProposta = (projetos = [], data = new Date()) => {
   const anoCompleto = data.getFullYear();
   const anoCurto = String(anoCompleto).slice(-2);
-  let maiorSequencia = 0;
+  const sequenciaInicialPorAno = { 2026: 74 };
+  let maiorSequencia = (sequenciaInicialPorAno[anoCompleto] || 1) - 1;
 
   (projetos || []).forEach((projeto) => {
     const numeroAtual = String(projeto?.clienteCadastro?.numeroProposta || "").trim();
