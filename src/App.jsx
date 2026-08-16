@@ -2863,24 +2863,60 @@ export default function App() {
                   <FileText size={12} /> {modeloPropostaAtivo === "collem" ? "Anexo I .xlsx" : "Proposta .xlsx"}
                 </button>
 
-                {modeloPropostaAtivo === "collem" && (
+                {modeloPropostaAtivo && (
                   <button
                     type="button"
                     onClick={async () => {
                       try {
-                        const { gerarPropostaCollemDocx } = await import(
-                          "./propostas/collemProposal"
+                        if (modeloPropostaAtivo === "collem") {
+                          const { gerarPropostaCollemDocx } = await import(
+                            "./propostas/collemProposal"
+                          );
+                          await gerarPropostaCollemDocx({
+                            projeto: projetoAtivo,
+                            cliente: clienteAtivo,
+                            totalGeral: bdiCalc.valorVenda,
+                          });
+                          return;
+                        }
+
+                        const numeroProposta = clienteAtivo.numeroProposta || proximoNumeroProposta(projetos);
+                        if (!clienteAtivo.numeroProposta) {
+                          setClienteAtivo((prev) => ({ ...prev, numeroProposta }));
+                        }
+                        const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, clienteAtivo);
+                        const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
+                        const descricaoRegimeMateriais = materialPorContaCliente(clienteAtivo)
+                          ? "Material por conta do cliente. A proposta considera somente os serviços, mão de obra, equipamentos e demais custos não classificados como material."
+                          : materialFaturamentoDireto(clienteAtivo) || bdiCalc.faturamentoDireto
+                            ? Array.isArray(bdiCalc.materiaisFaturamentoDireto)
+                              ? "Somente os materiais selecionados no orçamento são considerados com faturamento direto para o cliente, aplicando o BDI específico configurado."
+                              : "Materiais considerados com faturamento direto para o cliente, aplicando BDI específico de materiais quando configurado."
+                            : "Materiais inclusos no fornecimento da ALPHA ENGENHARIA conforme composição do orçamento.";
+                        const { gerarPropostaAlphaDocx } = await import(
+                          "./propostas/alphaProposal"
                         );
-                        await gerarPropostaCollemDocx({
-                          projeto: projetoAtivo,
-                          cliente: clienteAtivo,
-                          totalGeral: bdiCalc.valorVenda,
+                        await gerarPropostaAlphaDocx({
+                          nomeProjeto: projetoAtivo?.nome || "Orçamento",
+                          nomeCliente: clienteAtivo?.nome || "Cliente",
+                          localObra: clienteAtivo?.local || clienteAtivo?.endereco || "",
+                          contato: clienteAtivo?.contato || "",
+                          numeroProposta,
+                          grupos,
+                          comparativos: montarComparativosProposta(etapas, bdiCalc, cpus, catalogMap, clienteAtivo),
+                          totalGeral,
+                          descricaoRegimeMateriais,
+                          responsabilidadesAlpha: listaTextoOuPadrao(clienteAtivo?.responsabilidadesAlpha, RESPONSABILIDADES_ALPHA_PADRAO),
+                          responsabilidadesCliente: listaTextoOuPadrao(clienteAtivo?.responsabilidadesCliente, RESPONSABILIDADES_CLIENTE_PADRAO),
+                          condicoesPagamento: clienteAtivo?.condicoesPagamento || `Entrada de 40% (R$ ${fmt(totalGeral * 0.4)}) e o restante (R$ ${fmt(totalGeral * 0.6)}) conforme avanço dos serviços em medições.`,
+                          prazoExecucao: clienteAtivo?.prazoExecucao || "A definir conforme cronograma aprovado entre as partes.",
+                          observacoes: clienteAtivo?.observacoes || "",
                         });
                       } catch (erro) {
-                        alert(`Falha ao gerar a proposta COLLEM: ${erro?.message || erro}`);
+                        alert(`Falha ao gerar a proposta: ${erro?.message || erro}`);
                       }
                     }}
-                    className="px-2 py-1 text-[11px] font-medium border border-[#126594] text-white bg-[#126594] rounded hover:bg-[#0d527a] flex items-center gap-1"
+                    className={`px-2 py-1 text-[11px] font-medium border text-white rounded flex items-center gap-1 ${modeloPropostaAtivo === "collem" ? "border-[#126594] bg-[#126594] hover:bg-[#0d527a]" : "border-[#7B9A56] bg-[#7B9A56] hover:bg-[#698448]"}`}
                   >
                     <FileText size={12} /> Proposta .docx
                   </button>
