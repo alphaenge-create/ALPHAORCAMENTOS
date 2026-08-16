@@ -345,6 +345,69 @@ const proximoNumeroProposta = (projetos = [], data = new Date()) => {
   return `PROP - ${String(maiorSequencia + 1).padStart(2, "0")}/${anoCurto}`;
 };
 
+const VERSAO_NUMERACAO_PROPOSTAS = 1;
+const ANO_INICIAL_PROPOSTAS = 2026;
+const SEQUENCIA_INICIAL_PROPOSTAS = 74;
+
+const numerarProjetosExistentes = (projetos = []) => {
+  const lista = Array.isArray(projetos) ? projetos : [];
+  if (lista.length === 0) return { projetos: lista, idsMigrados: [] };
+
+  const ordenados = lista
+    .map((projeto, indiceOriginal) => ({ projeto, indiceOriginal }))
+    .sort((a, b) => {
+      const dataA = Date.parse(a.projeto?.criadoEm || "");
+      const dataB = Date.parse(b.projeto?.criadoEm || "");
+      const tempoA = Number.isFinite(dataA) ? dataA : Number.MAX_SAFE_INTEGER;
+      const tempoB = Number.isFinite(dataB) ? dataB : Number.MAX_SAFE_INTEGER;
+      return tempoA - tempoB || a.indiceOriginal - b.indiceOriginal;
+    });
+
+  const indiceAncora = ordenados.findIndex(({ projeto }) => {
+    const cliente = clienteDoProjeto(projeto);
+    const texto = normalizarBusca(
+      `${projeto?.nome || ""} ${cliente.nome || ""} ${cliente.contato || ""}`
+    );
+    return texto.includes("supressao arborea") && texto.includes("fernanda");
+  });
+  const indiceNumero74 = ordenados.findIndex(({ projeto }) =>
+    /(^|\D)74\s*[\/-]\s*26\s*$/.test(
+      String(projeto?.clienteCadastro?.numeroProposta || "").trim()
+    )
+  );
+  const indiceBase = indiceAncora >= 0 ? indiceAncora : indiceNumero74;
+  if (indiceBase < 0) return { projetos: lista, idsMigrados: [] };
+
+  const numeroPorId = new Map(
+    ordenados.map(({ projeto }, indice) => [
+      projeto.id,
+      `PROP - ${String(SEQUENCIA_INICIAL_PROPOSTAS + indice - indiceBase).padStart(2, "0")}/${String(ANO_INICIAL_PROPOSTAS).slice(-2)}`,
+    ])
+  );
+  const idsMigrados = [];
+  const projetosNumerados = lista.map((projeto) => {
+    const numeroAtual = String(projeto?.clienteCadastro?.numeroProposta || "").trim();
+    if (
+      Number(projeto?.numeracaoPropostaVersao || 0) >= VERSAO_NUMERACAO_PROPOSTAS &&
+      numeroAtual
+    ) {
+      return projeto;
+    }
+
+    idsMigrados.push(projeto.id);
+    return {
+      ...projeto,
+      numeracaoPropostaVersao: VERSAO_NUMERACAO_PROPOSTAS,
+      clienteCadastro: {
+        ...(projeto.clienteCadastro || {}),
+        numeroProposta: numeroPorId.get(projeto.id),
+      },
+    };
+  });
+
+  return { projetos: projetosNumerados, idsMigrados };
+};
+
 const escapeHtml = (valor) =>
   String(valor ?? "")
     .replace(/&/g, "&amp;")
@@ -1064,15 +1127,30 @@ export default function App() {
 
   const aplicarDadosCarregados = (data) => {
     if (data.empty) {
-      const defaultProj = createDefaultProject();
-      setCpusState(seedCpus());
+      const defaultBase = createDefaultProject();
+      const defaultProj = {
+        ...defaultBase,
+        numeracaoPropostaVersao: VERSAO_NUMERACAO_PROPOSTAS,
+        clienteCadastro: {
+          ...(defaultBase.clienteCadastro || {}),
+          numeroProposta: proximoNumeroProposta([]),
+        },
+      };
+      const cpusIniciais = seedCpus();
+      const snapshotInicial = {
+        ...data,
+        cpus: cpusIniciais,
+        projetos: [defaultProj],
+        projetoAtivoId: defaultProj.id,
+      };
+      setCpusState(cpusIniciais);
       setCpusDirty(true);
       setProjetos([defaultProj]);
       projectHashesRef.current = {};
       legacyPrecosRef.current = [];
       setProjetoAtivoId(defaultProj.id);
       setStatus("Nenhum dado salvo no Firebase. Projeto inicial criado localmente.");
-      return;
+      return { snapshot: snapshotInicial, idsNumerados: [] };
     }
 
     const precosLegados = Array.isArray(data.precos) ? data.precos : [];
@@ -1080,21 +1158,32 @@ export default function App() {
       projetos: projetosPreparados,
       projetoMigrado,
     } = prepararBancosDePrecosPorProjeto(data.projetos || [], precosLegados);
+    const {
+      projetos: projetosNumerados,
+      idsMigrados: idsNumerados,
+    } = numerarProjetosExistentes(projetosPreparados);
+    const snapshotPreparado = {
+      ...data,
+      projetos: projetosNumerados,
+    };
 
     setCpusState(data.cpus || []);
     cpuHashesRef.current = data.cpuHashes || {};
     setCpusDirty(false);
-    setProjetos(projetosPreparados);
+    setProjetos(projetosNumerados);
     projectHashesRef.current = Object.fromEntries(
-      projetosPreparados.map((project) => [project.id, JSON.stringify(project)])
+      projetosNumerados.map((project) => [project.id, JSON.stringify(project)])
     );
     legacyPrecosRef.current = precosLegados;
     setProjetoAtivoId(data.projetoAtivoId || "");
     setStatus(
-      projetoMigrado && precosLegados.length > 0
+      idsNumerados.length > 0
+        ? `${idsNumerados.length} orçamento(s) receberam numeração sequencial de proposta.`
+        : projetoMigrado && precosLegados.length > 0
         ? `Banco de Preços atual vinculado ao orçamento "${projetoMigrado.nome}".`
         : "Dados carregados do Firebase."
     );
+    return { snapshot: snapshotPreparado, idsNumerados };
   };
 
   const carregarDados = async ({ usarDrive = true } = {}) => {
@@ -1103,10 +1192,22 @@ export default function App() {
     try {
       const driveData = usarDrive ? await loadGoogleDriveSnapshot() : null;
       if (usarDrive && driveData) {
-        aplicarDadosCarregados(driveData);
-        await saveLocalSnapshot(driveData);
+        const dadosAplicados = aplicarDadosCarregados(driveData);
+        await saveLocalSnapshot(dadosAplicados.snapshot);
+        if (dadosAplicados.idsNumerados.length > 0) {
+          await executarSalvamentoAteConseguir("a numeração das propostas", () =>
+            saveGoogleDriveSnapshot(dadosAplicados.snapshot, {
+              includeBase: false,
+              projectIds: dadosAplicados.idsNumerados,
+            })
+          );
+        }
         setDriveConnected(true);
-        setStatus("Dados carregados do Google Drive.");
+        setStatus(
+          dadosAplicados.idsNumerados.length > 0
+            ? `${dadosAplicados.idsNumerados.length} proposta(s) numerada(s) e salva(s) no Google Drive.`
+            : "Dados carregados do Google Drive."
+        );
       } else {
         const data = await loadOrcamentoData();
         aplicarDadosCarregados(data);
@@ -1262,9 +1363,21 @@ export default function App() {
       setStatus("Google Drive conectado. Carregando orçamentos...");
       const driveData = await loadGoogleDriveSnapshot();
       if (driveData) {
-        aplicarDadosCarregados(driveData);
-        await saveLocalSnapshot(driveData);
-        setStatus("Drive conectado e orçamentos carregados.");
+        const dadosAplicados = aplicarDadosCarregados(driveData);
+        await saveLocalSnapshot(dadosAplicados.snapshot);
+        if (dadosAplicados.idsNumerados.length > 0) {
+          await executarSalvamentoAteConseguir("a numeração das propostas", () =>
+            saveGoogleDriveSnapshot(dadosAplicados.snapshot, {
+              includeBase: false,
+              projectIds: dadosAplicados.idsNumerados,
+            })
+          );
+        }
+        setStatus(
+          dadosAplicados.idsNumerados.length > 0
+            ? `Drive conectado. ${dadosAplicados.idsNumerados.length} proposta(s) numerada(s) e salva(s).`
+            : "Drive conectado e orçamentos carregados."
+        );
       } else {
         setStatus("Drive conectado. Ainda não há orçamentos salvos nesta conta.");
       }
@@ -2045,6 +2158,7 @@ export default function App() {
                       {
                       id: pId,
                       nome: `Novo Orçamento - ${prev.length + 1}`,
+                      numeracaoPropostaVersao: VERSAO_NUMERACAO_PROPOSTAS,
                       criadoEm: new Date().toISOString(),
                       atualizadoEm: "",
                       cliente: "",
@@ -2200,7 +2314,9 @@ export default function App() {
                                 {projeto.nome || "Orçamento sem nome"}
                               </p>
                               <p className="text-[11px] text-stone-400 mt-1 truncate">
-                                {cliente.nome || "Cliente não cadastrado"}
+                                {cliente.numeroProposta
+                                  ? `${cliente.numeroProposta} · ${cliente.nome || "Cliente não cadastrado"}`
+                                  : cliente.nome || "Cliente não cadastrado"}
                               </p>
                             </div>
                             <div className="min-w-0">
@@ -2331,7 +2447,9 @@ export default function App() {
                                   {projeto.nome || "Orçamento sem nome"}
                                 </p>
                                 <p className="text-xs text-stone-500 mt-1 truncate">
-                                  {cliente.nome || "Cliente não cadastrado"}
+                                  {cliente.numeroProposta
+                                    ? `${cliente.numeroProposta} · ${cliente.nome || "Cliente não cadastrado"}`
+                                    : cliente.nome || "Cliente não cadastrado"}
                                 </p>
                                 <p className="text-[11px] text-stone-400 mt-1 flex items-center gap-1">
                                   <MapPin size={11} className="shrink-0" />
