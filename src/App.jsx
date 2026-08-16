@@ -2425,8 +2425,9 @@ export default function App() {
               ) : (
                 <>
                   <div className="hidden xl:block overflow-x-auto">
-                    <div className="min-w-[960px]">
-                      <div className="grid grid-cols-[minmax(145px,1.2fr)_minmax(165px,1.3fr)_90px_105px_115px_80px_105px_108px] gap-3 px-5 py-3 bg-stone-50 border-b border-stone-200 text-[10px] font-semibold uppercase text-stone-500">
+                    <div className="min-w-[1060px]">
+                      <div className="grid grid-cols-[88px_minmax(145px,1.2fr)_minmax(165px,1.3fr)_90px_105px_115px_80px_105px_108px] gap-3 px-5 py-3 bg-stone-50 border-b border-stone-200 text-[10px] font-semibold uppercase text-stone-500">
+                        <div>Número</div>
                         <div>Orçamento</div>
                         <div>Cliente / Local</div>
                         <div className="text-right">Desconto</div>
@@ -2461,7 +2462,7 @@ export default function App() {
                                 abrirProjetoDaLista(projeto, cliente);
                               }
                             }}
-                            className={`grid grid-cols-[minmax(145px,1.2fr)_minmax(165px,1.3fr)_90px_105px_115px_80px_105px_108px] gap-3 px-5 py-4 border-b border-stone-200 last:border-b-0 items-center cursor-pointer outline-none transition-colors border-l-4 ${
+                            className={`grid grid-cols-[88px_minmax(145px,1.2fr)_minmax(165px,1.3fr)_90px_105px_115px_80px_105px_108px] gap-3 px-5 py-4 border-b border-stone-200 last:border-b-0 items-center cursor-pointer outline-none transition-colors border-l-4 ${
                               isSentToClient
                                 ? "border-l-amber-600 bg-yellow-300 hover:bg-yellow-200 focus:bg-yellow-200"
                                 : isActive
@@ -2469,14 +2470,15 @@ export default function App() {
                                 : "border-l-transparent hover:bg-stone-50 focus:bg-stone-50"
                             }`}
                           >
+                            <div className="text-xs font-mono font-semibold text-stone-700 whitespace-nowrap">
+                              {cliente.numeroProposta || "Pendente"}
+                            </div>
                             <div className="min-w-0">
                               <p className="text-xs font-semibold text-stone-900 uppercase truncate">
                                 {projeto.nome || "Orçamento sem nome"}
                               </p>
                               <p className="text-[11px] text-stone-400 mt-1 truncate">
-                                {cliente.numeroProposta
-                                  ? `${cliente.numeroProposta} · ${cliente.nome || "Cliente não cadastrado"}`
-                                  : cliente.nome || "Cliente não cadastrado"}
+                                {cliente.nome || "Cliente não cadastrado"}
                               </p>
                             </div>
                             <div className="min-w-0">
@@ -3789,9 +3791,10 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
             <CampoCliente
               label="Número da proposta (automático)"
               value={cliente.numeroProposta || ""}
-              onChange={(valor) => atualizarCampo("numeroProposta", valor)}
+              onChange={() => {}}
               icon={<FileText size={14} />}
-              placeholder="Ex.: PROP - 13/26"
+              placeholder="Número gerado automaticamente"
+              readOnly
             />
             <div>
               <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
@@ -3910,7 +3913,7 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
   );
 }
 
-function CampoCliente({ label, value, onChange, icon, required, type = "text", inputClassName, placeholder }) {
+function CampoCliente({ label, value, onChange, icon, required, type = "text", inputClassName, placeholder, readOnly = false }) {
   return (
     <div>
       <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
@@ -3920,7 +3923,12 @@ function CampoCliente({ label, value, onChange, icon, required, type = "text", i
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={inputClassName || "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700"}
+        readOnly={readOnly}
+        className={inputClassName || `w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none ${
+          readOnly
+            ? "bg-stone-100 text-stone-600 cursor-not-allowed"
+            : "bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700"
+        }`}
         placeholder={placeholder}
       />
     </div>
