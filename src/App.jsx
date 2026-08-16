@@ -72,9 +72,15 @@ const CLIENTE_PADRAO = {
   documento: "",
   endereco: "",
   numeroProposta: "",
+  modeloProposta: "",
   regimeMateriais: "alpha",
   prazoExecucao: "",
   condicoesPagamento: "",
+  percentualSinalCollem: 20,
+  textoApresentacaoCollem: "",
+  naoInclusosCollem: "",
+  condicoesEspeciaisCollem: "",
+  responsavelCollem: "Geraldo Belloni Perez",
   responsabilidadesAlpha: "",
   responsabilidadesCliente: "",
   observacoes: "",
@@ -521,7 +527,7 @@ const criarAbaVendaModelo = (grupos, fatorVenda = 1) => {
   return ws;
 };
 
-const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
+const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap, modelo }) => {
   const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, cliente);
   const comparativos = montarComparativosProposta(
     etapas,
@@ -556,7 +562,8 @@ const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalog
     ];
     XLSX.utils.book_append_sheet(wb, wsAlternativas, "ALTERNATIVAS");
   }
-  XLSX.writeFile(wb, `${nomeArquivoSeguro(projeto.nome)}_Proposta.xlsx`);
+  const sufixo = modelo === "collem" ? "Anexo_I_COLLEM" : "Proposta_ALPHA";
+  XLSX.writeFile(wb, `${nomeArquivoSeguro(projeto.nome)}_${sufixo}.xlsx`);
 };
 
 const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap }) => {
@@ -1194,6 +1201,7 @@ export default function App() {
   }, [projetos, projetoAtivoId]);
 
   const clienteAtivo = useMemo(() => clienteDoProjeto(projetoAtivo), [projetoAtivo]);
+  const modeloPropostaAtivo = clienteAtivo.modeloProposta || "";
   const cadastroClienteOk = useMemo(() => clienteEstaCompleto(clienteAtivo), [clienteAtivo]);
   const etapas = useMemo(() => projetoAtivo?.etapas || [], [projetoAtivo]);
   const bdi = useMemo(() => projetoAtivo?.bdi || BDI_PADRAO, [projetoAtivo]);
@@ -2624,6 +2632,47 @@ export default function App() {
 
         {tab === "precovenda" && projetoAtivo && (
           <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden p-5 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 border border-stone-200 bg-stone-50 px-4 py-3 rounded-lg">
+              <div>
+                <p className="text-xs font-semibold text-stone-800">Modelo da proposta</p>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Selecione a empresa antes de gerar os documentos comerciais.
+                </p>
+              </div>
+              <div className="inline-flex w-full sm:w-auto border border-stone-300 rounded-md overflow-hidden bg-white" role="radiogroup" aria-label="Modelo da proposta">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={modeloPropostaAtivo === "collem"}
+                  onClick={() => setClienteAtivo((prev) => ({ ...prev, modeloProposta: "collem" }))}
+                  className={`flex-1 sm:flex-none px-4 py-2 text-xs font-semibold border-r border-stone-300 ${
+                    modeloPropostaAtivo === "collem"
+                      ? "bg-[#126594] text-white"
+                      : "bg-white text-stone-600 hover:bg-stone-50"
+                  }`}
+                >
+                  COLLEM
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={modeloPropostaAtivo === "alpha"}
+                  onClick={() => setClienteAtivo((prev) => ({ ...prev, modeloProposta: "alpha" }))}
+                  className={`flex-1 sm:flex-none px-4 py-2 text-xs font-semibold ${
+                    modeloPropostaAtivo === "alpha"
+                      ? "bg-[#789654] text-white"
+                      : "bg-white text-stone-600 hover:bg-stone-50"
+                  }`}
+                >
+                  ALPHA ENGENHARIA
+                </button>
+              </div>
+            </div>
+            {!modeloPropostaAtivo && (
+              <div className="flex items-center gap-2 px-3 py-2 border border-amber-300 bg-amber-50 text-amber-800 rounded-md text-xs">
+                <AlertTriangle size={14} /> Escolha COLLEM ou ALPHA ENGENHARIA para liberar a geração da proposta.
+              </div>
+            )}
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-base font-semibold text-stone-800">Planilha de Preço de Venda</h2>
@@ -2711,15 +2760,51 @@ export default function App() {
                       bdiCalc,
                       cpus,
                       catalogMap,
+                      modelo: modeloPropostaAtivo,
                     })
                   }
-                  className="px-2 py-1 text-[11px] font-medium border border-stone-900 text-white bg-stone-900 rounded hover:bg-stone-800 flex items-center gap-1"
+                  disabled={!modeloPropostaAtivo}
+                  className="px-2 py-1 text-[11px] font-medium border border-stone-900 text-white bg-stone-900 rounded hover:bg-stone-800 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <FileText size={12} /> Proposta .xlsx
+                  <FileText size={12} /> {modeloPropostaAtivo === "collem" ? "Anexo I .xlsx" : "Proposta .xlsx"}
                 </button>
 
+                {modeloPropostaAtivo === "collem" && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const { gerarPropostaCollemDocx } = await import(
+                          "./propostas/collemProposal"
+                        );
+                        await gerarPropostaCollemDocx({
+                          projeto: projetoAtivo,
+                          cliente: clienteAtivo,
+                          totalGeral: bdiCalc.valorVenda,
+                        });
+                      } catch (erro) {
+                        alert(`Falha ao gerar a proposta COLLEM: ${erro?.message || erro}`);
+                      }
+                    }}
+                    className="px-2 py-1 text-[11px] font-medium border border-[#126594] text-white bg-[#126594] rounded hover:bg-[#0d527a] flex items-center gap-1"
+                  >
+                    <FileText size={12} /> Proposta .docx
+                  </button>
+                )}
+
                 <button
-                  onClick={() =>
+                  onClick={async () => {
+                    if (modeloPropostaAtivo === "collem") {
+                      const { gerarPropostaCollemPdf } = await import(
+                        "./propostas/collemProposal"
+                      );
+                      gerarPropostaCollemPdf({
+                        projeto: projetoAtivo,
+                        cliente: clienteAtivo,
+                        totalGeral: bdiCalc.valorVenda,
+                      });
+                      return;
+                    }
                     gerarPropostaPdf({
                       projeto: projetoAtivo,
                       cliente: clienteAtivo,
@@ -2727,9 +2812,10 @@ export default function App() {
                       bdiCalc,
                       cpus,
                       catalogMap,
-                    })
-                  }
-                  className="px-2 py-1 text-[11px] font-medium border border-red-200 text-red-700 bg-red-50/50 rounded hover:bg-red-50 flex items-center gap-1"
+                    });
+                  }}
+                  disabled={!modeloPropostaAtivo}
+                  className="px-2 py-1 text-[11px] font-medium border border-red-200 text-red-700 bg-red-50/50 rounded hover:bg-red-50 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Download size={12} /> Proposta PDF
                 </button>
@@ -3363,6 +3449,53 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
               placeholder={RESPONSABILIDADES_CLIENTE_PADRAO.join("\n")}
             />
           </div>
+          {cliente.modeloProposta === "collem" && (
+            <div className="border-t border-stone-200 pt-4 space-y-4">
+              <div>
+                <h4 className="text-xs font-semibold text-[#126594]">Dados específicos da proposta COLLEM</h4>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Campos vazios usarão os textos padrão do modelo oficial.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <CampoCliente
+                  label="Sinal de negócio (%)"
+                  value={cliente.percentualSinalCollem ?? 20}
+                  onChange={(valor) => atualizarCampo("percentualSinalCollem", valor)}
+                  icon={<Percent size={14} />}
+                  type="number"
+                  placeholder="20"
+                />
+                <CampoCliente
+                  label="Responsável pela proposta"
+                  value={cliente.responsavelCollem || ""}
+                  onChange={(valor) => atualizarCampo("responsavelCollem", valor)}
+                  icon={<User size={14} />}
+                  placeholder="Geraldo Belloni Perez"
+                />
+              </div>
+              <CampoTextoCliente
+                label="Texto de apresentação COLLEM"
+                value={cliente.textoApresentacaoCollem || ""}
+                onChange={(valor) => atualizarCampo("textoApresentacaoCollem", valor)}
+                placeholder="Atendendo à vossa solicitação, estamos encaminhando nossa proposta..."
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <CampoTextoCliente
+                  label="Não inclusos"
+                  value={cliente.naoInclusosCollem || ""}
+                  onChange={(valor) => atualizarCampo("naoInclusosCollem", valor)}
+                  placeholder="Itens e fornecimentos que não fazem parte desta proposta"
+                />
+                <CampoTextoCliente
+                  label="Condições especiais"
+                  value={cliente.condicoesEspeciaisCollem || ""}
+                  onChange={(valor) => atualizarCampo("condicoesEspeciaisCollem", valor)}
+                  placeholder="Alojamento, alimentação, acessos e demais condições acordadas"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="pt-3 border-t border-stone-200 flex justify-end">
