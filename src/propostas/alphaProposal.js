@@ -293,7 +293,7 @@ const criarTabelaAlternativas = (comparativos) => {
   });
 };
 
-const criarTabelaValores = (grupos, totalGeral) => {
+const criarTabelaValores = (grupos, totalGeral, descontoNegociacao = 0) => {
   const larguras = [680, 4380, 730, 870, 1130, 1130, 1570];
   const linhas = [
     new TableRow({
@@ -358,6 +358,29 @@ const criarTabelaValores = (grupos, totalGeral) => {
     );
   });
 
+  if (descontoNegociacao > 0) {
+    linhas.push(
+      new TableRow({
+        cantSplit: true,
+        children: [
+          celula("DESCONTO DA NEGOCIAÇÃO", {
+            columnSpan: 6,
+            fill: VERDE_CLARO,
+            bold: true,
+            alignment: AlignmentType.LEFT,
+            size: 20,
+          }),
+          celula(`- R$ ${moeda(descontoNegociacao)}`, {
+            fill: VERDE_CLARO,
+            bold: true,
+            alignment: AlignmentType.RIGHT,
+            size: 20,
+          }),
+        ],
+      })
+    );
+  }
+
   linhas.push(
     new TableRow({
       cantSplit: true,
@@ -385,6 +408,7 @@ export const criarPropostaAlphaDocxBlob = async (dados, opcoes = {}) => {
   const dataHoje = hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
   const grupos = dados.grupos || [];
   const totalGeral = Number(dados.totalGeral || 0);
+  const descontoNegociacao = Math.max(0, Number(dados.descontoNegociacao || 0));
   const abertura = [
     paragrafo([run("PROPOSTA DE PRESTAÇÃO DE SERVIÇOS", { bold: true, size: 32 })], {
       alignment: AlignmentType.CENTER,
@@ -418,7 +442,7 @@ export const criarPropostaAlphaDocxBlob = async (dados, opcoes = {}) => {
     corpo.push(criarTabelaAlternativas(dados.comparativos));
   }
 
-  corpo.push(criarTabelaValores(grupos, totalGeral));
+  corpo.push(criarTabelaValores(grupos, totalGeral, descontoNegociacao));
   const fechamento = [
     tituloSecao("Condições de pagamento:", { before: 200 }),
     paragrafo(dados.condicoesPagamento || "A definir entre as partes."),

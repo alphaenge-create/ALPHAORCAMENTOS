@@ -345,6 +345,23 @@ const proximoNumeroProposta = (projetos = [], data = new Date()) => {
   return `PROP - ${String(maiorSequencia + 1).padStart(2, "0")}/${anoCurto}`;
 };
 
+const numeroMoeda = (valor) => {
+  if (typeof valor === "number") return Number.isFinite(valor) ? valor : 0;
+  const texto = String(valor ?? "").trim();
+  if (!texto) return 0;
+  const normalizado = texto.includes(",")
+    ? texto.replace(/\./g, "").replace(",", ".")
+    : texto;
+  const numero = Number(normalizado);
+  return Number.isFinite(numero) ? numero : 0;
+};
+
+const descontoNegociacaoProjeto = (projeto) =>
+  Math.max(0, numeroMoeda(projeto?.descontoNegociacao));
+
+const aplicarDescontoNegociacao = (valorBruto, desconto) =>
+  Math.max(0, num(valorBruto) - Math.max(0, numeroMoeda(desconto)));
+
 const VERSAO_NUMERACAO_PROPOSTAS = 1;
 const ANO_INICIAL_PROPOSTAS = 2026;
 const SEQUENCIA_INICIAL_PROPOSTAS = 74;
@@ -490,7 +507,10 @@ const montarComparativosProposta = (
         return {
           ...opcao,
           selecionada: grupo.opcaoAtivaId === opcao.id,
-          valorVenda,
+          valorVenda: aplicarDescontoNegociacao(
+            valorVenda,
+            bdiCalc?.descontoNegociacao
+          ),
         };
       }),
     }))
@@ -583,7 +603,12 @@ const aplicarAlinhamento = (ws, row, cols, alignment) => {
   });
 };
 
-const criarAbaVendaModelo = (grupos, fatorVenda = 1, modelo = "alpha") => {
+const criarAbaVendaModelo = (
+  grupos,
+  fatorVenda = 1,
+  modelo = "alpha",
+  descontoNegociacao = 0
+) => {
   const collem = modelo === "collem";
   const estilos = collem
     ? {
@@ -623,13 +648,23 @@ const criarAbaVendaModelo = (grupos, fatorVenda = 1, modelo = "alpha") => {
   });
 
   rows.push([]);
+  const totalBruto = grupos.reduce((total, grupo) => total + num(grupo.total), 0);
+  const descontoAplicado = Math.min(
+    totalBruto,
+    Math.max(0, num(descontoNegociacao))
+  );
+  let descontoRow = 0;
+  if (descontoAplicado > 0) {
+    descontoRow = rows.length + 1;
+    rows.push([null, "DESCONTO DA NEGOCIAÇÃO", null, null, null, null, null, -descontoAplicado]);
+  }
   const totalRow = rows.length + 1;
-  const totalGeral = grupos.reduce((total, grupo) => total + num(grupo.total), 0);
+  const totalGeral = aplicarDescontoNegociacao(totalBruto, descontoAplicado);
   rows.push([null, "TOTAL GERAL", null, null, null, null, null, totalGeral]);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   const totalAddr = XLSX.utils.encode_cell({ r: totalRow - 1, c: 7 });
-  const ultimaLinhaValores = Math.max(4, totalRow - 2);
+  const ultimaLinhaValores = Math.max(4, totalRow - 1);
   ws[totalAddr] = {
     t: "n",
     v: totalGeral,
@@ -638,6 +673,9 @@ const criarAbaVendaModelo = (grupos, fatorVenda = 1, modelo = "alpha") => {
   };
   ws["!merges"] = [
     { s: { r: 1, c: 1 }, e: { r: 1, c: 7 } },
+    ...(descontoRow > 0
+      ? [{ s: { r: descontoRow - 1, c: 1 }, e: { r: descontoRow - 1, c: 6 } }]
+      : []),
     { s: { r: totalRow - 1, c: 1 }, e: { r: totalRow - 1, c: 6 } },
   ];
   ws["!cols"] = [
@@ -678,6 +716,13 @@ const criarAbaVendaModelo = (grupos, fatorVenda = 1, modelo = "alpha") => {
     aplicarFormatoNumerico(ws, row, [6, 7, 8], collem ? XLSX_MOEDA : XLSX_NUMERO);
   });
 
+  if (descontoRow > 0) {
+    aplicarEstiloLinha(ws, descontoRow, 2, 8, estilos.grupo);
+    aplicarAlinhamento(ws, descontoRow, [2], { horizontal: "left" });
+    aplicarAlinhamento(ws, descontoRow, [8], { horizontal: "right" });
+    aplicarFormatoNumerico(ws, descontoRow, [8], XLSX_MOEDA);
+  }
+
   aplicarEstiloLinha(ws, totalRow, 2, 8, estilos.total);
   aplicarFormatoNumerico(ws, totalRow, [8], XLSX_MOEDA);
 
@@ -703,7 +748,12 @@ const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalog
       forceFullCalc: true,
     },
   };
-  const wsValores = criarAbaVendaModelo(grupos, bdiCalc?.FatorBdi || 1, modelo);
+  const wsValores = criarAbaVendaModelo(
+    grupos,
+    bdiCalc?.FatorBdi || 1,
+    modelo,
+    bdiCalc?.descontoNegociacao || 0
+  );
   XLSX.utils.book_append_sheet(wb, wsValores, "VENDA");
   if (comparativos.length > 0) {
     const linhas = [["ETAPA", "GRUPO", "ALTERNATIVA", "SELECIONADA", "TOTAL DA PROPOSTA"]];
@@ -741,7 +791,15 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap,
     catalogMap,
     cliente
   );
-  const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
+  const totalBruto = grupos.reduce((s, grupo) => s + grupo.total, 0);
+  const descontoNegociacao = Math.min(
+    totalBruto,
+    Math.max(0, num(bdiCalc?.descontoNegociacao))
+  );
+  const totalGeral = aplicarDescontoNegociacao(
+    totalBruto,
+    descontoNegociacao
+  );
   const hoje = new Date();
   const dataHoje = hoje.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
   const numeroProposta = cliente?.numeroProposta || numeroPropostaAutomatico || `PROP - 01/${String(hoje.getFullYear()).slice(-2)}`;
@@ -916,6 +974,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap,
       <thead><tr><th>ITEM</th><th>DESCRIÇÃO DOS SERVIÇOS</th><th>UNID.</th><th>QUANT.</th><th>VALOR UNIT.</th><th>VALOR TOTAL</th><th>TOTAL DO ITEM</th></tr></thead>
       <tbody>
         ${linhasValores}
+        ${descontoNegociacao > 0 ? `<tr class="grupo"><td colspan="6">DESCONTO DA NEGOCIAÇÃO</td><td>- R$ ${fmt(descontoNegociacao)}</td></tr>` : ""}
         <tr class="total"><td colspan="6">TOTAL GERAL</td><td>R$ ${fmt(totalGeral)}</td></tr>
       </tbody>
     </table>
@@ -1706,12 +1765,42 @@ export default function App() {
   }, [etapas, cpus, catalogMap]);
 
   const bdiCalc = useMemo(() => {
-    return calcularPrecoVendaProjeto(etapas, bdi, cpus, catalogMap);
-  }, [bdi, etapas, cpus, catalogMap]);
+    const calculo = calcularPrecoVendaProjeto(etapas, bdi, cpus, catalogMap);
+    const descontoNegociacao = Math.min(
+      calculo.valorVenda,
+      descontoNegociacaoProjeto(projetoAtivo)
+    );
+    const valorVenda = aplicarDescontoNegociacao(
+      calculo.valorVenda,
+      descontoNegociacao
+    );
+    const totalDiValor = valorVenda - calculo.custoDireto;
+    return {
+      ...calculo,
+      valorVendaBruto: calculo.valorVenda,
+      descontoNegociacao,
+      valorVenda,
+      totalDiValor,
+      totalDiRate:
+        calculo.custoDireto > 0 ? totalDiValor / calculo.custoDireto : 0,
+    };
+  }, [bdi, etapas, cpus, catalogMap, projetoAtivo]);
 
   const comparativosAlternativas = useMemo(
-    () => calcularComparativosAlternativas(etapas, bdi, cpus, catalogMap),
-    [etapas, bdi, cpus, catalogMap]
+    () =>
+      calcularComparativosAlternativas(etapas, bdi, cpus, catalogMap).map(
+        (grupo) => ({
+          ...grupo,
+          opcoes: grupo.opcoes.map((opcao) => ({
+            ...opcao,
+            valorVenda: aplicarDescontoNegociacao(
+              opcao.valorVenda,
+              bdiCalc.descontoNegociacao
+            ),
+          })),
+        })
+      ),
+    [etapas, bdi, cpus, catalogMap, bdiCalc.descontoNegociacao]
   );
 
   const projetosComResumo = useMemo(
@@ -1736,30 +1825,55 @@ export default function App() {
             ),
           0
         );
-        const valorVenda = calcularPrecoVendaProjeto(
+        const valorVendaBruto = calcularPrecoVendaProjeto(
           projeto.etapas || [],
           projeto.bdi || BDI_PADRAO,
           cpus,
           precosProjetoMap
         ).valorVenda;
+        const descontoNegociacao = Math.min(
+          valorVendaBruto,
+          descontoNegociacaoProjeto(projeto)
+        );
+        const valorVenda = aplicarDescontoNegociacao(
+          valorVendaBruto,
+          descontoNegociacao
+        );
         const statusProjeto = obterStatusProjeto(projeto);
 
         return {
           projeto,
           cliente,
           custoDireto,
+          valorVendaBruto,
+          descontoNegociacao,
           valorVenda,
           statusProjeto,
           indiceOriginal,
           dataOrdenacao:
             Date.parse(projeto.atualizadoEm || projeto.criadoEm || "") || 0,
           textoBusca: normalizarBusca(
-            `${projeto.nome || ""} ${cliente.nome || ""} ${cliente.local || ""} ${cliente.endereco || ""}`
+            `${projeto.nome || ""} ${cliente.numeroProposta || ""} ${cliente.nome || ""} ${cliente.local || ""} ${cliente.endereco || ""}`
           ),
         };
       }),
     [projetos, cpus]
   );
+
+  const resumoValoresPorStatus = useMemo(() => {
+    const totais = {
+      enviado_cliente: 0,
+      em_elaboracao: 0,
+      aprovado: 0,
+      reprovado: 0,
+    };
+    projetosComResumo.forEach((resumo) => {
+      if (Object.prototype.hasOwnProperty.call(totais, resumo.statusProjeto.id)) {
+        totais[resumo.statusProjeto.id] += resumo.valorVenda;
+      }
+    });
+    return totais;
+  }, [projetosComResumo]);
 
   const projetosFiltrados = useMemo(() => {
     const termos = normalizarBusca(buscaProjetos)
@@ -1852,6 +1966,20 @@ export default function App() {
     setProjetos(projetosAtualizados);
     setStatus("Status alterado. Salvando automaticamente no Google Drive...");
     await salvarProjeto(projectId);
+  };
+
+  const atualizarDescontoProjeto = (projectId, valor) => {
+    const dadosAtuais = dadosAtuaisRef.current;
+    const projetosAtualizados = dadosAtuais.projetos.map((projeto) =>
+      projeto.id === projectId
+        ? { ...projeto, descontoNegociacao: valor }
+        : projeto
+    );
+    dadosAtuaisRef.current = {
+      ...dadosAtuais,
+      projetos: projetosAtualizados,
+    };
+    setProjetos(projetosAtualizados);
   };
 
   // Abas disponíveis apenas dentro de um projeto ativo
@@ -2084,6 +2212,37 @@ export default function App() {
                 </>
               )}
             </nav>
+            <div className="max-lg:hidden border-t border-stone-200 px-3 py-3">
+              <p className="text-[10px] font-semibold uppercase text-stone-400 mb-2">
+                Resumo dos orçamentos
+              </p>
+              <div className="space-y-1.5 text-[10px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-amber-700">Enviados ao cliente</span>
+                  <span className="font-mono font-semibold text-stone-700 whitespace-nowrap">
+                    R$ {fmt(resumoValoresPorStatus.enviado_cliente)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sky-700">Em elaboração</span>
+                  <span className="font-mono font-semibold text-stone-700 whitespace-nowrap">
+                    R$ {fmt(resumoValoresPorStatus.em_elaboracao)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-emerald-700">Aprovados</span>
+                  <span className="font-mono font-semibold text-stone-700 whitespace-nowrap">
+                    R$ {fmt(resumoValoresPorStatus.aprovado)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-red-700">Reprovados</span>
+                  <span className="font-mono font-semibold text-stone-700 whitespace-nowrap">
+                    R$ {fmt(resumoValoresPorStatus.reprovado)}
+                  </span>
+                </div>
+              </div>
+            </div>
             {projetoAtivo && tabEhDeProjeto && (
               <div className="p-2 border-t border-stone-200">
                 <button
@@ -2267,10 +2426,10 @@ export default function App() {
                 <>
                   <div className="hidden xl:block overflow-x-auto">
                     <div className="min-w-[960px]">
-                      <div className="grid grid-cols-[minmax(145px,1.2fr)_minmax(165px,1.3fr)_50px_105px_115px_80px_105px_108px] gap-3 px-5 py-3 bg-stone-50 border-b border-stone-200 text-[10px] font-semibold uppercase text-stone-500">
+                      <div className="grid grid-cols-[minmax(145px,1.2fr)_minmax(165px,1.3fr)_90px_105px_115px_80px_105px_108px] gap-3 px-5 py-3 bg-stone-50 border-b border-stone-200 text-[10px] font-semibold uppercase text-stone-500">
                         <div>Orçamento</div>
                         <div>Cliente / Local</div>
-                        <div>Etapas</div>
+                        <div className="text-right">Desconto</div>
                         <div className="text-right">Custo direto</div>
                         <div className="text-right">Preço de venda</div>
                         <div>Atualizado</div>
@@ -2283,6 +2442,7 @@ export default function App() {
                           projeto,
                           cliente,
                           custoDireto,
+                          descontoNegociacao,
                           valorVenda,
                           statusProjeto,
                         } = resumo;
@@ -2301,7 +2461,7 @@ export default function App() {
                                 abrirProjetoDaLista(projeto, cliente);
                               }
                             }}
-                            className={`grid grid-cols-[minmax(145px,1.2fr)_minmax(165px,1.3fr)_50px_105px_115px_80px_105px_108px] gap-3 px-5 py-4 border-b border-stone-200 last:border-b-0 items-center cursor-pointer outline-none transition-colors border-l-4 ${
+                            className={`grid grid-cols-[minmax(145px,1.2fr)_minmax(165px,1.3fr)_90px_105px_115px_80px_105px_108px] gap-3 px-5 py-4 border-b border-stone-200 last:border-b-0 items-center cursor-pointer outline-none transition-colors border-l-4 ${
                               isSentToClient
                                 ? "border-l-amber-600 bg-yellow-300 hover:bg-yellow-200 focus:bg-yellow-200"
                                 : isActive
@@ -2330,8 +2490,24 @@ export default function App() {
                                 </span>
                               </p>
                             </div>
-                            <div className="text-xs text-stone-600">
-                              {(projeto.etapas || []).length}
+                            <div>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={projeto.descontoNegociacao ?? ""}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                onChange={(e) => atualizarDescontoProjeto(projeto.id, e.target.value)}
+                                onBlur={() => salvarProjeto(projeto.id)}
+                                placeholder="0,00"
+                                aria-label={`Desconto do orçamento ${projeto.nome}`}
+                                className="w-full h-8 px-2 text-right text-xs font-mono bg-white border border-stone-300 rounded-md outline-none focus:border-stone-600"
+                              />
+                              {descontoNegociacao > 0 && (
+                                <p className="mt-1 text-[9px] text-right text-red-600 font-mono">
+                                  - R$ {fmt(descontoNegociacao)}
+                                </p>
+                              )}
                             </div>
                             <div className="text-xs text-right font-mono text-stone-600 whitespace-nowrap">
                               R$ {fmt(custoDireto)}
@@ -2419,6 +2595,7 @@ export default function App() {
                         projeto,
                         cliente,
                         custoDireto,
+                        descontoNegociacao,
                         valorVenda,
                         statusProjeto,
                       } = resumo;
@@ -2486,10 +2663,22 @@ export default function App() {
 
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-stone-200/70">
                             <div>
-                              <p className="text-[9px] uppercase text-stone-400">Etapas</p>
-                              <p className="text-xs font-medium text-stone-700 mt-0.5">
-                                {(projeto.etapas || []).length}
-                              </p>
+                              <p className="text-[9px] uppercase text-stone-400">Desconto</p>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={projeto.descontoNegociacao ?? ""}
+                                onChange={(e) => atualizarDescontoProjeto(projeto.id, e.target.value)}
+                                onBlur={() => salvarProjeto(projeto.id)}
+                                placeholder="0,00"
+                                aria-label={`Desconto do orçamento ${projeto.nome}`}
+                                className="mt-1 w-full h-8 px-2 text-right text-xs font-mono bg-white border border-stone-300 rounded-md outline-none focus:border-stone-600"
+                              />
+                              {descontoNegociacao > 0 && (
+                                <p className="mt-1 text-[9px] text-red-600 font-mono whitespace-nowrap">
+                                  - R$ {fmt(descontoNegociacao)}
+                                </p>
+                              )}
                             </div>
                             <div>
                               <p className="text-[9px] uppercase text-stone-400">Custo direto</p>
@@ -2958,7 +3147,7 @@ export default function App() {
                           setClienteAtivo((prev) => ({ ...prev, numeroProposta }));
                         }
                         const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, clienteAtivo);
-                        const totalGeral = grupos.reduce((s, grupo) => s + grupo.total, 0);
+                        const totalGeral = bdiCalc.valorVenda;
                         const descricaoRegimeMateriais = materialPorContaCliente(clienteAtivo)
                           ? "Material por conta do cliente. A proposta considera somente os serviços, mão de obra, equipamentos e demais custos não classificados como material."
                           : materialFaturamentoDireto(clienteAtivo) || bdiCalc.faturamentoDireto
@@ -2978,6 +3167,7 @@ export default function App() {
                           grupos,
                           comparativos: montarComparativosProposta(etapas, bdiCalc, cpus, catalogMap, clienteAtivo),
                           totalGeral,
+                          descontoNegociacao: bdiCalc.descontoNegociacao,
                           descricaoRegimeMateriais,
                           responsabilidadesAlpha: listaTextoOuPadrao(clienteAtivo?.responsabilidadesAlpha, RESPONSABILIDADES_ALPHA_PADRAO),
                           responsabilidadesCliente: listaTextoOuPadrao(clienteAtivo?.responsabilidadesCliente, RESPONSABILIDADES_CLIENTE_PADRAO),
@@ -3222,8 +3412,19 @@ export default function App() {
                 )}
                 
                 {/* LINHA DE TOTAIS GERAIS DA PLANILHA DE VENDA */}
+                {bdiCalc.descontoNegociacao > 0 && (
+                  <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-amber-50 border-t border-amber-200 text-xs font-semibold uppercase text-amber-900">
+                    <span className="col-span-6">Desconto da negociação</span>
+                    <span className="col-span-4 text-right font-mono text-stone-500">
+                      Venda bruta: R$ {fmt(bdiCalc.valorVendaBruto)}
+                    </span>
+                    <span className="col-span-2 text-right font-mono text-red-700">
+                      - R$ {fmt(bdiCalc.descontoNegociacao)}
+                    </span>
+                  </div>
+                )}
                 <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-900 text-white text-sm font-semibold uppercase tracking-wider">
-                  <span className="col-span-6">VALOR FINAL DE VENDA COM BDI</span>
+                  <span className="col-span-6">VALOR FINAL DE VENDA</span>
                   <span className="col-span-1"></span>
                   <span className="col-span-1.5"></span>
                   <span className="col-span-1.5"></span>
@@ -5847,7 +6048,7 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
             </label>
             <div className="min-h-9 rounded-md border border-amber-200 bg-white px-3 py-2 text-xs text-stone-600">
               <span className="font-mono">R$ {fmt(bdiCalc.valorVendaBase)} ÷ {fmt(bdiCalc.collemX)} ÷ {fmt(bdiCalc.collemY)}</span>
-              <span className="font-semibold text-stone-900 ml-2">= R$ {fmt(bdiCalc.valorVenda)}</span>
+              <span className="font-semibold text-stone-900 ml-2">= R$ {fmt(bdiCalc.valorVendaBruto)}</span>
             </div>
           </div>
         )}
@@ -5965,6 +6166,18 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
                   <div className="flex justify-between text-amber-300">
                     <span>Divisores COLLEM:</span>
                     <span className="font-mono">÷ {fmt(bdiCalc.collemX)} ÷ {fmt(bdiCalc.collemY)}</span>
+                  </div>
+                </>
+              )}
+              {bdiCalc.descontoNegociacao > 0 && (
+                <>
+                  <div className="flex justify-between border-t border-stone-800 pt-2">
+                    <span className="text-stone-400">Venda bruta:</span>
+                    <span className="font-mono">R$ {fmt(bdiCalc.valorVendaBruto)}</span>
+                  </div>
+                  <div className="flex justify-between text-red-300">
+                    <span>Desconto da negociação:</span>
+                    <span className="font-mono">- R$ {fmt(bdiCalc.descontoNegociacao)}</span>
                   </div>
                 </>
               )}
