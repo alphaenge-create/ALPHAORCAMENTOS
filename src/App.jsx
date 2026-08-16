@@ -542,9 +542,18 @@ const criarAbaVendaModelo = (grupos, fatorVenda = 1, modelo = "alpha") => {
 
   rows.push([]);
   const totalRow = rows.length + 1;
-  rows.push([null, "TOTAL GERAL", null, null, null, null, null, { f: `SUM(H4:H${totalRow - 2})` }]);
+  const totalGeral = grupos.reduce((total, grupo) => total + num(grupo.total), 0);
+  rows.push([null, "TOTAL GERAL", null, null, null, null, null, totalGeral]);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
+  const totalAddr = XLSX.utils.encode_cell({ r: totalRow - 1, c: 7 });
+  const ultimaLinhaValores = Math.max(4, totalRow - 2);
+  ws[totalAddr] = {
+    t: "n",
+    v: totalGeral,
+    f: `SUM(H4:H${ultimaLinhaValores})`,
+    z: XLSX_MOEDA,
+  };
   ws["!merges"] = [
     { s: { r: 1, c: 1 }, e: { r: 1, c: 7 } },
     { s: { r: totalRow - 1, c: 1 }, e: { r: totalRow - 1, c: 6 } },
@@ -603,6 +612,15 @@ const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalog
     cliente
   );
   const wb = XLSX.utils.book_new();
+  wb.Workbook = {
+    ...(wb.Workbook || {}),
+    CalcPr: {
+      ...(wb.Workbook?.CalcPr || {}),
+      calcMode: "auto",
+      fullCalcOnLoad: true,
+      forceFullCalc: true,
+    },
+  };
   const wsValores = criarAbaVendaModelo(grupos, bdiCalc?.FatorBdi || 1, modelo);
   XLSX.utils.book_append_sheet(wb, wsValores, "VENDA");
   if (comparativos.length > 0) {
