@@ -4790,16 +4790,16 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
   };
 
   const duplicateCpu = (c) => {
-    setCpus([
-      ...cpus,
-      {
-        ...c,
-        id: uid(),
-        codigo: proximoCodigoCpuPropria(cpus),
-        fonte: "Própria",
-        insumos: (c.insumos || []).map((i) => ({ ...i, id: uid() })),
-      },
-    ]);
+    const cpuDuplicada = {
+      ...c,
+      id: uid(),
+      codigo: proximoCodigoCpuPropria(cpus),
+      fonte: "Própria",
+      insumos: (c.insumos || []).map((i) => ({ ...i, id: uid() })),
+    };
+
+    setCpus([...cpus, cpuDuplicada]);
+    setEditing(cpuDuplicada);
   };
 
   const saveCpu = (cpu) => {
