@@ -2321,7 +2321,7 @@ export default function App() {
   const tabEhDeProjeto = abasProjeto.includes(tab);
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900">
+    <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col">
       {!driveConnected && (
         <div
           className="fixed inset-0 z-[100] bg-stone-950/55 backdrop-blur-sm flex items-center justify-center p-4"
@@ -2563,7 +2563,7 @@ export default function App() {
         </div>
       )}
 
-      <div className="max-w-[1500px] mx-auto px-4 py-6 lg:flex lg:items-start lg:gap-5">
+      <div className="max-w-[1500px] w-full mx-auto px-4 py-6 lg:flex lg:items-start lg:gap-5 flex-1">
         <aside className="lg:sticky lg:top-4 lg:w-64 lg:shrink-0 mb-5 lg:mb-0">
           <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-stone-200">
@@ -4032,6 +4032,9 @@ export default function App() {
         )}
         </main>
       </div>
+      <footer className="border-t border-stone-200 bg-white/70 px-4 py-3 text-center text-[10px] tracking-wide text-stone-400">
+        Elaborado e desenvolvido por <span className="font-semibold text-stone-500">Hemerson R. O. Moreira</span>
+      </footer>
     </div>
   );
 }
