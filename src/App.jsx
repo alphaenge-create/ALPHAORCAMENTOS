@@ -1923,6 +1923,30 @@ export default function App() {
     return Object.values(resumoMAT).sort((a, b) => b.valorTotal - a.valorTotal); // Ordena do mais caro para o mais barato
   }, [etapas, cpus, catalogMap]);
 
+  const materiaisOrdenados = useMemo(
+    () =>
+      ordenarLista(processarMateriais, ordenacaoMateriais, (material, key) => {
+        if (key === "faturamento") {
+          return !!bdi.faturamentoDireto && (
+            !Array.isArray(bdi.materiaisFaturamentoDireto) ||
+            bdi.materiaisFaturamentoDireto.includes(material.chave)
+          );
+        }
+        return material[key];
+      }),
+    [processarMateriais, ordenacaoMateriais, bdi.faturamentoDireto, bdi.materiaisFaturamentoDireto]
+  );
+
+  const maoObraConsolidada = useMemo(
+    () => consolidarMaoDeObra(etapas, cpus, catalogMap),
+    [etapas, cpus, catalogMap]
+  );
+
+  const maoObraOrdenada = useMemo(
+    () => ordenarLista(maoObraConsolidada, ordenacaoMaoObra, (registro, key) => registro[key]),
+    [maoObraConsolidada, ordenacaoMaoObra]
+  );
+
   const chavesMateriaisOrcamento = useMemo(
     () => processarMateriais.map((material) => material.chave),
     [processarMateriais]
@@ -5288,30 +5312,6 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
         return insumo[key] || "";
       }),
     [insumos, ordenacao, cpus, catalogMap]
-  );
-
-  const materiaisOrdenados = useMemo(
-    () =>
-      ordenarLista(processarMateriais, ordenacaoMateriais, (material, key) => {
-        if (key === "faturamento") {
-          return !!bdi.faturamentoDireto && (
-            !Array.isArray(bdi.materiaisFaturamentoDireto) ||
-            bdi.materiaisFaturamentoDireto.includes(material.chave)
-          );
-        }
-        return material[key];
-      }),
-    [processarMateriais, ordenacaoMateriais, bdi.faturamentoDireto, bdi.materiaisFaturamentoDireto]
-  );
-
-  const maoObraConsolidada = useMemo(
-    () => consolidarMaoDeObra(etapas, cpus, catalogMap),
-    [etapas, cpus, catalogMap]
-  );
-
-  const maoObraOrdenada = useMemo(
-    () => ordenarLista(maoObraConsolidada, ordenacaoMaoObra, (registro, key) => registro[key]),
-    [maoObraConsolidada, ordenacaoMaoObra]
   );
 
   const ordenarPor = (key, direcaoInicial = "asc") =>
