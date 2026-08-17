@@ -38,6 +38,7 @@ import {
   itemIncluidoNoCalculo,
   itensAtivosDaEtapa,
 } from "./utils/alternativas";
+import { proximoCodigoCpuPropria } from "./utils/cpuCodigo";
 import {
   deleteGoogleDriveProject,
   loadGoogleDriveSnapshot,
@@ -4682,14 +4683,30 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
   };
 
   const duplicateCpu = (c) => {
-    setCpus([...cpus, { ...c, id: uid(), codigo: c.codigo + " (cópia)", insumos: c.insumos.map((i) => ({ ...i, id: uid() })) }]);
+    setCpus([
+      ...cpus,
+      {
+        ...c,
+        id: uid(),
+        codigo: proximoCodigoCpuPropria(cpus),
+        fonte: "Própria",
+        insumos: (c.insumos || []).map((i) => ({ ...i, id: uid() })),
+      },
+    ]);
   };
 
   const saveCpu = (cpu) => {
     if (cpus.find((c) => c.id === cpu.id)) {
       setCpus(cpus.map((c) => (c.id === cpu.id ? cpu : c)));
     } else {
-      setCpus([...cpus, cpu]);
+      setCpus([
+        ...cpus,
+        {
+          ...cpu,
+          codigo: proximoCodigoCpuPropria(cpus),
+          fonte: "Própria",
+        },
+      ]);
     }
     setEditing(null);
   };
@@ -5096,7 +5113,15 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
         ))}
       </div>
 
-      {editing && <CpuEditor cpu={editing === "new" ? null : editing} onCancel={() => setEditing(null)} onSave={saveCpu} catalogMap={catalogMap} />}
+      {editing && (
+        <CpuEditor
+          cpu={editing === "new" ? null : editing}
+          codigoAutomatico={editing === "new" ? proximoCodigoCpuPropria(cpus) : ""}
+          onCancel={() => setEditing(null)}
+          onSave={saveCpu}
+          catalogMap={catalogMap}
+        />
+      )}
     </div>
   );
 }
@@ -5611,8 +5636,9 @@ function PrecosTab({
 }
 
 /* ---------------- EDITOR DE CPUS INDIVIDUAIS ---------------- */
-function CpuEditor({ cpu, onCancel, onSave, catalogMap }) {
-  const [codigo, setCodigo] = useState(cpu?.codigo || "");
+function CpuEditor({ cpu, codigoAutomatico, onCancel, onSave, catalogMap }) {
+  const novaCpu = !cpu;
+  const [codigo, setCodigo] = useState(cpu?.codigo || codigoAutomatico || "");
   const [fonte, setFonte] = useState(cpu?.fonte || "Própria");
   const [descricao, setDescricao] = useState(cpu?.descricao || "");
   const [unidade, setUnidade] = useState(cpu?.unidade || "m²");
@@ -5631,11 +5657,31 @@ function CpuEditor({ cpu, onCancel, onSave, catalogMap }) {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mb-4">
           <div>
             <label className="block text-stone-500 mb-1">Tabela / Fonte</label>
-            <input value={fonte} onChange={(e) => setFonte(e.target.value)} placeholder="Ex: SINAPI, SUDECAP" className="w-full border border-stone-300 rounded-lg px-3 py-2" />
+            <input
+              value={fonte}
+              onChange={(e) => setFonte(e.target.value)}
+              readOnly={novaCpu}
+              placeholder="Ex: SINAPI, SUDECAP"
+              title={novaCpu ? "Novas composições manuais são identificadas como próprias" : undefined}
+              className={`w-full border border-stone-300 rounded-lg px-3 py-2 ${
+                novaCpu ? "bg-stone-100 text-stone-700 cursor-not-allowed" : "bg-white"
+              }`}
+            />
           </div>
           <div>
-            <label className="block text-stone-500 mb-1">Código Identificador</label>
-            <input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Ex: 12.34.56" className="w-full border border-stone-300 rounded-lg px-3 py-2" />
+            <label className="block text-stone-500 mb-1">
+              Código Identificador{novaCpu ? " (automático)" : ""}
+            </label>
+            <input
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value)}
+              readOnly={novaCpu}
+              placeholder="Ex: prop.0001"
+              title={novaCpu ? "Código reservado automaticamente para composição própria" : undefined}
+              className={`w-full border border-stone-300 rounded-lg px-3 py-2 font-mono ${
+                novaCpu ? "bg-stone-100 text-stone-700 cursor-not-allowed" : "bg-white"
+              }`}
+            />
           </div>
           <div>
             <label className="block text-stone-500 mb-1">Unidade Principal</label>
