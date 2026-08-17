@@ -89,6 +89,39 @@ export const fmt = (n) =>
 
 export const num = (v) => (v === "" || v === null || v === undefined ? 0 : Number(v));
 
+const somenteDigitos = (valor, limite) =>
+  String(valor ?? "").replace(/\D/g, "").slice(0, limite);
+
+export const formatarCpfCnpj = (valor) => {
+  const digitos = somenteDigitos(valor, 14);
+  if (digitos.length <= 11) {
+    return digitos
+      .replace(/^(\d{3})(\d)/, "$1.$2")
+      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1-$2");
+  }
+  return digitos
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2");
+};
+
+export const formatarTelefone = (valor) => {
+  const digitos = somenteDigitos(valor, 11);
+  if (digitos.length <= 10) {
+    return digitos
+      .replace(/^(\d{2})(\d)/, "($1) $2")
+      .replace(/(\d{4})(\d)/, "$1-$2");
+  }
+  return digitos
+    .replace(/^(\d{2})(\d)/, "($1) $2")
+    .replace(/(\d{5})(\d)/, "$1-$2");
+};
+
+export const formatarCep = (valor) =>
+  somenteDigitos(valor, 8).replace(/^(\d{5})(\d)/, "$1-$2");
+
 export const avaliarExpressaoNumerica = (valor) => {
   let expressao = String(valor ?? "").trim();
   if (!expressao) return null;
