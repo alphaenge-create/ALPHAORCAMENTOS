@@ -299,10 +299,11 @@ async function saveProjetosV3(projetos, projetoAtivoId) {
 }
 
 export async function loadOrcamentoData() {
-  const [projetosV3, chunkedProjetos, chunkedPrecos, snapProjetos, snapMeta, snapPrecos] = await Promise.all([
+  const [projetosV3, chunkedProjetos, chunkedPrecos, chunkedClientes, snapProjetos, snapMeta, snapPrecos] = await Promise.all([
     loadProjetosV3(),
     readChunkedData("projetos"),
     readChunkedData("precos"),
+    readChunkedData("clientes"),
     getDoc(doc(db, ROOT_COLLECTION, "projetos")),
     getDoc(doc(db, ROOT_COLLECTION, "cpus_meta")),
     getDoc(doc(db, ROOT_COLLECTION, "precos")),
@@ -323,6 +324,7 @@ export async function loadOrcamentoData() {
     cpus,
     cpuHashes: buildCpuHashes(cpus),
     projetos: projetosData.projetos || [],
+    clientes: chunkedClientes?.clientes || [],
     precos: precosData.precos || [],
     projetoAtivoId: projetosData.projetoAtivoId || "",
   };
@@ -331,6 +333,7 @@ export async function loadOrcamentoData() {
 export async function saveOrcamentoData({
   cpus,
   projetos,
+  clientes = [],
   precos,
   projetoAtivoId,
   previousCpuHashes = {},
@@ -338,6 +341,7 @@ export async function saveOrcamentoData({
 }) {
   await saveProjetosV3(projetos, projetoAtivoId);
   await withTimeout(writeChunkedData("precos", { precos }), "Salvamento do banco de precos");
+  await withTimeout(writeChunkedData("clientes", { clientes }), "Salvamento do cadastro de clientes");
 
   if (!includeCpus) {
     return {

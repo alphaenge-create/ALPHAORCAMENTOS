@@ -2,6 +2,7 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DRIVE_FOLDER_NAME = "AlphaOrcamentos";
 const DRIVE_BACKUP_NAME = "alphaorc-backup.json.gz";
 const DRIVE_BASE_NAME = "alphaorc-base.json.gz";
+const DRIVE_CLIENTS_NAME = "alphaorc-clientes.json.gz";
 const DRIVE_PROJECT_PREFIX = "alphaorc-projeto-";
 const DRIVE_PROJECT_SUFFIX = ".json.gz";
 const DRIVE_STORAGE_VERSION = 2;
@@ -268,9 +269,10 @@ const upsertDriveJsonFile = async (folderId, name, data, knownFile = null) => {
 const saveSeparatedSnapshot = async (
   folder,
   data,
-  { includeBase = false, projectIds = [], migrateAll = false } = {}
+  { includeBase = false, includeClients = false, projectIds = [], migrateAll = false } = {}
 ) => {
   const baseFile = await findNamedFile(folder.id, DRIVE_BASE_NAME);
+  const clientsFile = await findNamedFile(folder.id, DRIVE_CLIENTS_NAME);
   const firstSeparatedSave = !baseFile;
   const idsToSave = new Set(projectIds || []);
   const projectsToSave = firstSeparatedSave || migrateAll
@@ -305,10 +307,25 @@ const saveSeparatedSnapshot = async (
     );
   }
 
+  if (!clientsFile || includeClients || migrateAll) {
+    await upsertDriveJsonFile(
+      folder.id,
+      DRIVE_CLIENTS_NAME,
+      {
+        storageVersion: DRIVE_STORAGE_VERSION,
+        storage: "google-drive-separated",
+        savedAt,
+        clientes: data.clientes || [],
+      },
+      clientsFile
+    );
+  }
+
   return {
     storageVersion: DRIVE_STORAGE_VERSION,
     projetosSalvos: projectsToSave.length,
     baseSalva: firstSeparatedSave || includeBase || migrateAll,
+    clientesSalvos: !clientsFile || includeClients || migrateAll,
   };
 };
 
@@ -324,8 +341,10 @@ export async function loadGoogleDriveSnapshot() {
   const baseFile = await findNamedFile(folder.id, DRIVE_BASE_NAME);
 
   if (baseFile) {
-    const [base, projectFiles] = await Promise.all([
+    const clientsFile = await findNamedFile(folder.id, DRIVE_CLIENTS_NAME);
+    const [base, clientsData, projectFiles] = await Promise.all([
       readDriveJsonFile(baseFile.id),
+      clientsFile ? readDriveJsonFile(clientsFile.id) : Promise.resolve(null),
       listProjectFiles(folder.id),
     ]);
     const projectRecords = (
@@ -362,6 +381,7 @@ export async function loadGoogleDriveSnapshot() {
       storageVersion: DRIVE_STORAGE_VERSION,
       storage: "google-drive-separated",
       cpus: base.cpus || [],
+      clientes: clientsData?.clientes || base.clientes || [],
       precos: base.precos || [],
       projetos,
       projetoAtivoId:

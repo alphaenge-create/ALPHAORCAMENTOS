@@ -20,6 +20,9 @@ import {
 } from "./utils/calculos";
 import {
   avaliarExpressaoNumerica,
+  formatarCep,
+  formatarCpfCnpj,
+  formatarTelefone,
   fmt,
   norm,
   normalizarBusca,
@@ -64,12 +67,14 @@ const BDI_PADRAO = {
 };
 
 const CLIENTE_PADRAO = {
+  clienteId: "",
   nome: "",
   local: "",
   contato: "",
   telefone: "",
   email: "",
   documento: "",
+  cep: "",
   endereco: "",
   numeroProposta: "",
   modeloProposta: "",
@@ -116,6 +121,92 @@ const clienteDoProjeto = (projeto) => ({
   ...(projeto?.clienteCadastro || {}),
   nome: projeto?.clienteCadastro?.nome || projeto?.cliente || "",
 });
+
+const CAMPOS_CLIENTE_COMPARTILHADOS = [
+  "nome",
+  "contato",
+  "telefone",
+  "email",
+  "documento",
+  "cep",
+  "endereco",
+];
+
+const dadosClienteCompartilhado = (cliente = {}) => ({
+  nome: cliente.nome || "",
+  contato: cliente.contato || "",
+  telefone: formatarTelefone(cliente.telefone || ""),
+  email: cliente.email || "",
+  documento: formatarCpfCnpj(cliente.documento || ""),
+  cep: formatarCep(cliente.cep || ""),
+  endereco: cliente.endereco || "",
+});
+
+const chaveClienteCompartilhado = (cliente = {}) => {
+  const documento = String(cliente.documento || "").replace(/\D/g, "");
+  if (documento.length >= 11) return `doc:${documento}`;
+  const email = normalizarBusca(cliente.email || "");
+  if (email) return `email:${email}`;
+  const nome = normalizarBusca(cliente.nome || "");
+  return nome ? `nome:${nome}` : "";
+};
+
+const prepararClientesCompartilhados = (projetos = [], clientesSalvos = []) => {
+  const clientes = [];
+  const porId = new Map();
+  const porChave = new Map();
+
+  (clientesSalvos || []).forEach((clienteSalvo) => {
+    const cliente = {
+      id: clienteSalvo.id || uid(),
+      ...dadosClienteCompartilhado(clienteSalvo),
+      atualizadoEm: clienteSalvo.atualizadoEm || "",
+    };
+    clientes.push(cliente);
+    porId.set(cliente.id, cliente);
+    const chave = chaveClienteCompartilhado(cliente);
+    if (chave && !porChave.has(chave)) porChave.set(chave, cliente);
+  });
+
+  const projetosPreparados = (projetos || []).map((projeto) => {
+    const cadastro = clienteDoProjeto(projeto);
+    if (!String(cadastro.nome || "").trim()) return projeto;
+
+    const chave = chaveClienteCompartilhado(cadastro);
+    let compartilhado = porId.get(cadastro.clienteId) || (chave ? porChave.get(chave) : null);
+    if (!compartilhado) {
+      compartilhado = {
+        id: cadastro.clienteId || uid(),
+        ...dadosClienteCompartilhado(cadastro),
+        atualizadoEm: projeto.atualizadoEm || projeto.criadoEm || "",
+      };
+      clientes.push(compartilhado);
+      porId.set(compartilhado.id, compartilhado);
+      if (chave) porChave.set(chave, compartilhado);
+    }
+
+    const dadosCompartilhados = Object.fromEntries(
+      CAMPOS_CLIENTE_COMPARTILHADOS.map((campo) => [
+        campo,
+        compartilhado[campo] || cadastro[campo] || "",
+      ])
+    );
+    Object.assign(compartilhado, dadosCompartilhados);
+
+    return {
+      ...projeto,
+      cliente: compartilhado.nome || cadastro.nome || "",
+      clienteCadastro: {
+        ...cadastro,
+        ...dadosCompartilhados,
+        clienteId: compartilhado.id,
+      },
+    };
+  });
+
+  clientes.sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+  return { clientes, projetos: projetosPreparados };
+};
 
 const clienteEstaCompleto = (cliente) =>
   Boolean(String(cliente?.nome || "").trim() && String(cliente?.local || "").trim());
@@ -1155,6 +1246,7 @@ export default function App() {
   const [tab, setTab] = useState("projetos");
   const [cpus, setCpusState] = useState([]);
   const [projetos, setProjetos] = useState([]);
+  const [clientes, setClientes] = useState([]);
   const [projetoAtivoId, setProjetoAtivoId] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1164,7 +1256,7 @@ export default function App() {
   const cpuHashesRef = useRef({});
   const projectHashesRef = useRef({});
   const legacyPrecosRef = useRef([]);
-  const dadosAtuaisRef = useRef({ cpus: [], projetos: [], projetoAtivoId: "" });
+  const dadosAtuaisRef = useRef({ cpus: [], projetos: [], clientes: [], projetoAtivoId: "" });
   const [cpusDirty, setCpusDirty] = useState(false);
   const [abaPendenteAposSalvarCpus, setAbaPendenteAposSalvarCpus] = useState(null);
   // Novos estados para controle de recolhimento/expansão das camadas
@@ -1177,7 +1269,7 @@ export default function App() {
   const [projetoParaExcluir, setProjetoParaExcluir] = useState(null);
   const [textoConfirmacaoExclusao, setTextoConfirmacaoExclusao] = useState("");
 
-  dadosAtuaisRef.current = { cpus, projetos, projetoAtivoId };
+  dadosAtuaisRef.current = { cpus, projetos, clientes, projetoAtivoId };
 
   const setCpus = (nextCpus) => {
     setCpusDirty(true);
@@ -1200,11 +1292,13 @@ export default function App() {
         ...data,
         cpus: cpusIniciais,
         projetos: [defaultProj],
+        clientes: [],
         projetoAtivoId: defaultProj.id,
       };
       setCpusState(cpusIniciais);
       setCpusDirty(true);
       setProjetos([defaultProj]);
+      setClientes([]);
       projectHashesRef.current = {};
       legacyPrecosRef.current = [];
       setProjetoAtivoId(defaultProj.id);
@@ -1221,17 +1315,23 @@ export default function App() {
       projetos: projetosNumerados,
       idsMigrados: idsNumerados,
     } = numerarProjetosExistentes(projetosPreparados);
+    const cadastroCompartilhado = prepararClientesCompartilhados(
+      projetosNumerados,
+      data.clientes || []
+    );
     const snapshotPreparado = {
       ...data,
-      projetos: projetosNumerados,
+      projetos: cadastroCompartilhado.projetos,
+      clientes: cadastroCompartilhado.clientes,
     };
 
     setCpusState(data.cpus || []);
     cpuHashesRef.current = data.cpuHashes || {};
     setCpusDirty(false);
-    setProjetos(projetosNumerados);
+    setProjetos(cadastroCompartilhado.projetos);
+    setClientes(cadastroCompartilhado.clientes);
     projectHashesRef.current = Object.fromEntries(
-      projetosNumerados.map((project) => [project.id, JSON.stringify(project)])
+      cadastroCompartilhado.projetos.map((project) => [project.id, JSON.stringify(project)])
     );
     legacyPrecosRef.current = precosLegados;
     setProjetoAtivoId(data.projetoAtivoId || "");
@@ -1257,6 +1357,7 @@ export default function App() {
           await executarSalvamentoAteConseguir("a numeração das propostas", () =>
             saveGoogleDriveSnapshot(dadosAplicados.snapshot, {
               includeBase: false,
+              includeClients: true,
               projectIds: dadosAplicados.idsNumerados,
             })
           );
@@ -1341,6 +1442,7 @@ export default function App() {
           await saveLocalSnapshot({
             cpus: dados.cpus,
             projetos: projetosAtualizados,
+            clientes: dados.clientes,
             precos: legacyPrecosRef.current,
             projetoAtivoId: dados.projetoAtivoId,
           });
@@ -1348,11 +1450,13 @@ export default function App() {
             {
               cpus: dados.cpus,
               projetos: projetosAtualizados,
+              clientes: dados.clientes,
               precos: legacyPrecosRef.current,
               projetoAtivoId: dados.projetoAtivoId,
             },
             {
               includeBase: false,
+              includeClients: true,
               projectIds: [projectId],
             }
           );
@@ -1389,6 +1493,7 @@ export default function App() {
         await saveLocalSnapshot({
           cpus: dados.cpus,
           projetos: dados.projetos,
+          clientes: dados.clientes,
           precos: legacyPrecosRef.current,
           projetoAtivoId: dados.projetoAtivoId,
         });
@@ -1396,11 +1501,13 @@ export default function App() {
           {
             cpus: dados.cpus,
             projetos: dados.projetos,
+            clientes: dados.clientes,
             precos: legacyPrecosRef.current,
             projetoAtivoId: dados.projetoAtivoId,
           },
           {
             includeBase: true,
+            includeClients: true,
             projectIds: [],
           }
         );
@@ -1428,6 +1535,7 @@ export default function App() {
           await executarSalvamentoAteConseguir("a numeração das propostas", () =>
             saveGoogleDriveSnapshot(dadosAplicados.snapshot, {
               includeBase: false,
+              includeClients: true,
               projectIds: dadosAplicados.idsNumerados,
             })
           );
@@ -1636,6 +1744,7 @@ export default function App() {
       await saveLocalSnapshot({
         cpus,
         projetos: nextProjects,
+        clientes,
         precos: legacyPrecosRef.current,
         projetoAtivoId: nextActiveId,
       });
@@ -2814,7 +2923,9 @@ export default function App() {
           <CadastroCliente
             projeto={projetoAtivo}
             cliente={clienteAtivo}
+            clientes={clientes}
             setProjetos={setProjetos}
+            setClientes={setClientes}
             setCliente={setClienteAtivo}
             completo={cadastroClienteOk}
             onContinuar={() => abrirAbaProjeto("custo")}
@@ -3642,9 +3753,67 @@ export default function App() {
   );
 }
 
-function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, onContinuar }) {
+function CadastroCliente({ projeto, cliente, clientes, setProjetos, setClientes, setCliente, completo, onContinuar }) {
+  const clientesOrdenados = useMemo(
+    () => [...(clientes || [])].sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")),
+    [clientes]
+  );
+
   const atualizarCampo = (campo, valor) => {
-    setCliente((prev) => ({ ...prev, [campo]: valor }));
+    if (!CAMPOS_CLIENTE_COMPARTILHADOS.includes(campo)) {
+      setCliente((prev) => ({ ...prev, [campo]: valor }));
+      return;
+    }
+
+    const clienteId = cliente.clienteId || uid();
+    const atualizadoEm = new Date().toISOString();
+    setClientes((atuais) => {
+      const existente = atuais.find((item) => item.id === clienteId);
+      const atualizado = {
+        id: clienteId,
+        ...dadosClienteCompartilhado(existente || cliente),
+        [campo]: valor,
+        atualizadoEm,
+      };
+      return existente
+        ? atuais.map((item) => (item.id === clienteId ? atualizado : item))
+        : [...atuais, atualizado];
+    });
+    setProjetos((atuais) =>
+      atuais.map((item) => {
+        const cadastroAtual = clienteDoProjeto(item);
+        const projetoAtivo = item.id === projeto.id;
+        if (!projetoAtivo && cadastroAtual.clienteId !== clienteId) return item;
+        const clienteCadastro = {
+          ...cadastroAtual,
+          clienteId,
+          [campo]: valor,
+        };
+        return {
+          ...item,
+          cliente: clienteCadastro.nome || "",
+          clienteCadastro,
+        };
+      })
+    );
+  };
+
+  const selecionarCliente = (clienteId) => {
+    if (!clienteId) {
+      setCliente((atual) => ({
+        ...atual,
+        clienteId: "",
+        ...dadosClienteCompartilhado({}),
+      }));
+      return;
+    }
+    const selecionado = clientes.find((item) => item.id === clienteId);
+    if (!selecionado) return;
+    setCliente((atual) => ({
+      ...atual,
+      ...dadosClienteCompartilhado(selecionado),
+      clienteId: selecionado.id,
+    }));
   };
 
   const atualizarNomeProjeto = (valor) => {
@@ -3709,6 +3878,34 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
       </div>
 
       <div className="p-5 space-y-5">
+        <div className="rounded-lg border border-stone-200 bg-stone-50 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
+            <div>
+              <label className="text-xs font-medium text-stone-600 mb-1 flex items-center gap-1.5">
+                <Building2 size={14} /> Cliente compartilhado
+              </label>
+              <select
+                value={cliente.clienteId || ""}
+                onChange={(e) => selecionarCliente(e.target.value)}
+                className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700"
+              >
+                <option value="">+ Cadastrar novo cliente</option>
+                {clientesOrdenados.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.nome || "Cliente sem nome"}{item.documento ? ` — ${item.documento}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <span className="text-[11px] text-stone-500 pb-2">
+              {clientesOrdenados.length} cliente(s) disponível(is)
+            </span>
+          </div>
+          <p className="text-[11px] text-stone-500 mt-2">
+            Nome, contato, telefone, e-mail, CPF/CNPJ, CEP e endereço são compartilhados entre os orçamentos vinculados.
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <CampoCliente
             label="Nome do orçamento"
@@ -3744,8 +3941,11 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
           <CampoCliente
             label="Telefone"
             value={cliente.telefone || ""}
-            onChange={(valor) => atualizarCampo("telefone", valor)}
+            onChange={(valor) => atualizarCampo("telefone", formatarTelefone(valor))}
             icon={<Phone size={14} />}
+            inputMode="tel"
+            maxLength={15}
+            autoComplete="tel"
           />
           <CampoCliente
             label="E-mail"
@@ -3753,21 +3953,34 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
             onChange={(valor) => atualizarCampo("email", valor)}
             icon={<Mail size={14} />}
             type="email"
+            autoComplete="email"
           />
           <CampoCliente
             label="CPF/CNPJ"
             value={cliente.documento || ""}
-            onChange={(valor) => atualizarCampo("documento", valor)}
+            onChange={(valor) => atualizarCampo("documento", formatarCpfCnpj(valor))}
             icon={<FileText size={14} />}
+            inputMode="numeric"
+            maxLength={18}
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <CampoCliente
+            label="CEP"
+            value={cliente.cep || ""}
+            onChange={(valor) => atualizarCampo("cep", formatarCep(valor))}
+            icon={<MapPin size={14} />}
+            inputMode="numeric"
+            maxLength={9}
+            autoComplete="postal-code"
+          />
           <CampoCliente
             label="Endereço"
             value={cliente.endereco || ""}
             onChange={(valor) => atualizarCampo("endereco", valor)}
             icon={<MapPin size={14} />}
+            autoComplete="street-address"
           />
           <div>
             <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
@@ -3913,7 +4126,7 @@ function CadastroCliente({ projeto, cliente, setProjetos, setCliente, completo, 
   );
 }
 
-function CampoCliente({ label, value, onChange, icon, required, type = "text", inputClassName, placeholder, readOnly = false }) {
+function CampoCliente({ label, value, onChange, icon, required, type = "text", inputClassName, placeholder, readOnly = false, inputMode, maxLength, autoComplete }) {
   return (
     <div>
       <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
@@ -3924,6 +4137,9 @@ function CampoCliente({ label, value, onChange, icon, required, type = "text", i
         value={value}
         onChange={(e) => onChange(e.target.value)}
         readOnly={readOnly}
+        inputMode={inputMode}
+        maxLength={maxLength}
+        autoComplete={autoComplete}
         className={inputClassName || `w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none ${
           readOnly
             ? "bg-stone-100 text-stone-600 cursor-not-allowed"
@@ -5795,6 +6011,12 @@ function Orcamento({ etapas, setEtapas, cpus, grandTotal, catalogMap, onUpsertPr
                           ) : (
                             <ChevronRight size={14} className="text-stone-400 shrink-0" />
                           )}
+                          <span
+                            className="shrink-0 rounded bg-stone-200 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-stone-600"
+                            title="Numeração automática da CPU"
+                          >
+                            {etapaIndex + 1}.{itemIndex + 1}
+                          </span>
                           <div className="min-w-0">
                             <span className="font-mono text-[10px] text-stone-400">{it.codigo}</span>
                             <h4 className="text-xs font-semibold text-stone-800 truncate">{it.servico}</h4>
