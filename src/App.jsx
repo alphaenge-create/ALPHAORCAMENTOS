@@ -7,7 +7,7 @@ import {
   ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, BarChart3, ChevronLeft
 } from "lucide-react";
 import HistogramaMaoObra from "./HistogramaMaoObra";
-import { FONTES_PADRAO, TIPOS, createDefaultProject, seedCpus } from "./data/defaultData";
+import { FONTES_PADRAO, TIPOS, seedCpus } from "./data/defaultData";
 import {
   applyCatalogToInsumos,
   buildCatalog,
@@ -145,9 +145,11 @@ const dadosClienteCompartilhado = (cliente = {}) => ({
 const chaveClienteCompartilhado = (cliente = {}) => {
   const documento = String(cliente.documento || "").replace(/\D/g, "");
   if (documento.length >= 11) return `doc:${documento}`;
+  const nome = normalizarBusca(cliente.nome || "");
+  const telefone = String(cliente.telefone || "").replace(/\D/g, "");
+  if (nome && telefone) return `nome:${nome}|tel:${telefone}`;
   const email = normalizarBusca(cliente.email || "");
   if (email) return `email:${email}`;
-  const nome = normalizarBusca(cliente.nome || "");
   return nome ? `nome:${nome}` : "";
 };
 
@@ -209,7 +211,11 @@ const prepararClientesCompartilhados = (projetos = [], clientesSalvos = []) => {
 };
 
 const clienteEstaCompleto = (cliente) =>
-  Boolean(String(cliente?.nome || "").trim() && String(cliente?.local || "").trim());
+  Boolean(
+    String(cliente?.clienteId || "").trim() &&
+    String(cliente?.nome || "").trim() &&
+    String(cliente?.local || "").trim()
+  );
 
 const obterStatusProjeto = (projeto) => {
   if (!clienteEstaCompleto(clienteDoProjeto(projeto))) {
@@ -1246,7 +1252,7 @@ export default function App() {
   const [tab, setTab] = useState("projetos");
   const [cpus, setCpusState] = useState([]);
   const [projetos, setProjetos] = useState([]);
-  const [clientes, setClientes] = useState([]);
+  const [clientes, setClientesState] = useState([]);
   const [projetoAtivoId, setProjetoAtivoId] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1258,7 +1264,11 @@ export default function App() {
   const legacyPrecosRef = useRef([]);
   const dadosAtuaisRef = useRef({ cpus: [], projetos: [], clientes: [], projetoAtivoId: "" });
   const [cpusDirty, setCpusDirty] = useState(false);
+  const [clientesDirty, setClientesDirty] = useState(false);
   const [abaPendenteAposSalvarCpus, setAbaPendenteAposSalvarCpus] = useState(null);
+  const [novoOrcamentoAberto, setNovoOrcamentoAberto] = useState(false);
+  const [novoOrcamentoClienteId, setNovoOrcamentoClienteId] = useState("");
+  const [novoOrcamentoNome, setNovoOrcamentoNome] = useState("");
   // Novos estados para controle de recolhimento/expansão das camadas
   const [etapasExpandidas, setEtapasExpandidas] = useState({});
   const [cpusExpandidas, setCpusExpandidas] = useState({});
@@ -1276,33 +1286,31 @@ export default function App() {
     setCpusState(nextCpus);
   };
 
+  const setClientes = (nextClientes) => {
+    setClientesDirty(true);
+    setClientesState(nextClientes);
+  };
+
   const aplicarDadosCarregados = (data) => {
     if (data.empty) {
-      const defaultBase = createDefaultProject();
-      const defaultProj = {
-        ...defaultBase,
-        numeracaoPropostaVersao: VERSAO_NUMERACAO_PROPOSTAS,
-        clienteCadastro: {
-          ...(defaultBase.clienteCadastro || {}),
-          numeroProposta: proximoNumeroProposta([]),
-        },
-      };
       const cpusIniciais = seedCpus();
       const snapshotInicial = {
         ...data,
         cpus: cpusIniciais,
-        projetos: [defaultProj],
+        projetos: [],
         clientes: [],
-        projetoAtivoId: defaultProj.id,
+        projetoAtivoId: "",
       };
       setCpusState(cpusIniciais);
       setCpusDirty(true);
-      setProjetos([defaultProj]);
-      setClientes([]);
+      setProjetos([]);
+      setClientesState([]);
+      setClientesDirty(false);
       projectHashesRef.current = {};
       legacyPrecosRef.current = [];
-      setProjetoAtivoId(defaultProj.id);
-      setStatus("Nenhum dado salvo no Firebase. Projeto inicial criado localmente.");
+      setProjetoAtivoId("");
+      setTab("clientes");
+      setStatus("Cadastre o primeiro cliente para começar um orçamento.");
       return { snapshot: snapshotInicial, idsNumerados: [] };
     }
 
@@ -1329,7 +1337,10 @@ export default function App() {
     cpuHashesRef.current = data.cpuHashes || {};
     setCpusDirty(false);
     setProjetos(cadastroCompartilhado.projetos);
-    setClientes(cadastroCompartilhado.clientes);
+    setClientesState(cadastroCompartilhado.clientes);
+    setClientesDirty(
+      JSON.stringify(data.clientes || []) !== JSON.stringify(cadastroCompartilhado.clientes)
+    );
     projectHashesRef.current = Object.fromEntries(
       cadastroCompartilhado.projetos.map((project) => [project.id, JSON.stringify(project)])
     );
@@ -1471,6 +1482,7 @@ export default function App() {
         )
       );
       projectHashesRef.current[projectId] = JSON.stringify(projectSalvo);
+      setClientesDirty(false);
       setDriveConnected(true);
       setStatus(
         cpusDirty
@@ -1513,11 +1525,76 @@ export default function App() {
         );
       });
       setCpusDirty(false);
+      setClientesDirty(false);
       setStatus("Base de CPUs salva no Google Drive.");
       return true;
     } finally {
       setBusy(false);
       setTimeout(() => setStatus(""), 12000);
+    }
+  };
+
+  const salvarClientesCompartilhados = async (proximosClientes) => {
+    const clientesAtualizados = [...(proximosClientes || [])].sort((a, b) =>
+      String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")
+    );
+    setBusy(true);
+    setStatus("Salvando cadastro compartilhado de clientes...");
+    try {
+      await executarSalvamentoAteConseguir("o cadastro de clientes", async () => {
+        const dados = dadosAtuaisRef.current;
+        const clientesPorId = new Map(clientesAtualizados.map((cliente) => [cliente.id, cliente]));
+        const projetosAtualizados = dados.projetos.map((projeto) => {
+          const cadastroAtual = clienteDoProjeto(projeto);
+          const compartilhado = clientesPorId.get(cadastroAtual.clienteId);
+          if (!compartilhado) return projeto;
+          const clienteCadastro = {
+            ...cadastroAtual,
+            ...dadosClienteCompartilhado(compartilhado),
+            clienteId: compartilhado.id,
+          };
+          return {
+            ...projeto,
+            cliente: clienteCadastro.nome || "",
+            clienteCadastro,
+          };
+        });
+        dadosAtuaisRef.current = {
+          ...dados,
+          clientes: clientesAtualizados,
+          projetos: projetosAtualizados,
+        };
+        setClientesState(clientesAtualizados);
+        setProjetos(projetosAtualizados);
+        await saveLocalSnapshot({
+          cpus: dados.cpus,
+          projetos: projetosAtualizados,
+          clientes: clientesAtualizados,
+          precos: legacyPrecosRef.current,
+          projetoAtivoId: dados.projetoAtivoId,
+        });
+        await saveGoogleDriveSnapshot(
+          {
+            cpus: dados.cpus,
+            projetos: projetosAtualizados,
+            clientes: clientesAtualizados,
+            precos: legacyPrecosRef.current,
+            projetoAtivoId: dados.projetoAtivoId,
+          },
+          {
+            includeBase: false,
+            includeClients: true,
+            projectIds: [],
+          }
+        );
+      });
+      setClientesDirty(false);
+      setDriveConnected(true);
+      setStatus("Cadastro de clientes salvo no Google Drive.");
+      return true;
+    } finally {
+      setBusy(false);
+      setTimeout(() => setStatus(""), 8000);
     }
   };
 
@@ -1659,7 +1736,7 @@ export default function App() {
   const executarMudancaAba = (proximaTab, validarCadastroProjeto = false) => {
     if (validarCadastroProjeto && proximaTab !== "cliente" && !cadastroClienteOk) {
       setTab("cliente");
-      setStatus("Preencha Nome do cliente e Local da obra para continuar.");
+      setStatus("Selecione um cliente cadastrado e informe o Local da obra para continuar.");
       setTimeout(() => setStatus(""), 5000);
       return;
     }
@@ -2091,6 +2168,82 @@ export default function App() {
     setProjetos(projetosAtualizados);
   };
 
+  const abrirNovoOrcamento = () => {
+    if (clientes.length === 0) {
+      setTab("clientes");
+      setStatus("Cadastre e salve um cliente antes de criar o primeiro orçamento.");
+      setTimeout(() => setStatus(""), 6000);
+      return;
+    }
+    setNovoOrcamentoClienteId("");
+    setNovoOrcamentoNome(`Novo Orçamento - ${projetos.length + 1}`);
+    setNovoOrcamentoAberto(true);
+  };
+
+  const criarNovoOrcamento = () => {
+    const clienteSelecionado = clientes.find((cliente) => cliente.id === novoOrcamentoClienteId);
+    if (!clienteSelecionado) return;
+    const pId = uid();
+    setProjetos((prev) => {
+      const numeroProposta = proximoNumeroProposta(prev);
+      return [
+        ...prev,
+        {
+          id: pId,
+          nome: novoOrcamentoNome.trim() || `Novo Orçamento - ${prev.length + 1}`,
+          numeracaoPropostaVersao: VERSAO_NUMERACAO_PROPOSTAS,
+          criadoEm: new Date().toISOString(),
+          atualizadoEm: "",
+          cliente: clienteSelecionado.nome || "",
+          clienteCadastro: {
+            ...CLIENTE_PADRAO,
+            ...dadosClienteCompartilhado(clienteSelecionado),
+            clienteId: clienteSelecionado.id,
+            numeroProposta,
+          },
+          etapas: [{ id: uid(), nome: "Etapa Inicial", itens: [] }],
+          precos: [],
+          bancoPrecosInicializado: true,
+          cronograma: {
+            dataInicio: "",
+            semanas: 12,
+            horasSemana: 44,
+            etapas: {},
+          },
+          bdi: {
+            custoInicial: 0,
+            admCentral: 0,
+            contabilidade: 0,
+            contingenciamento: 0,
+            custoFinanceiro: 0,
+            dasAnexoIV: 0,
+            art: 0,
+            retencaoInss: 0,
+            lucro: 0,
+            faturamentoDireto: false,
+            collemAtivo: false,
+            collemX: 1,
+            collemY: 1,
+            materiais: {
+              admCentral: 0,
+              contabilidade: 0,
+              contingenciamento: 0,
+              custoFinanceiro: 0,
+              lucro: 0,
+              dasAnexoIV: 0,
+              art: 0,
+            },
+          },
+        },
+      ];
+    });
+    setProjetoAtivoId(pId);
+    setNovoOrcamentoAberto(false);
+    setTab("cliente");
+    setStatus(`Orçamento criado para ${clienteSelecionado.nome}. Informe o local da obra para continuar.`);
+    setTimeout(() => setStatus(""), 6000);
+  };
+
   // Abas disponíveis apenas dentro de um projeto ativo
   const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "cronograma", "histograma", "maoobra", "materiais", "precos"];
   const tabEhDeProjeto = abasProjeto.includes(tab);
@@ -2130,6 +2283,87 @@ export default function App() {
                 {status}
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {novoOrcamentoAberto && (
+        <div
+          className="fixed inset-0 z-[95] bg-stone-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="novo-orcamento-title"
+        >
+          <div className="w-full max-w-lg bg-white border border-stone-200 rounded-lg shadow-2xl p-6">
+            <div>
+              <h2 id="novo-orcamento-title" className="text-base font-semibold text-stone-900 flex items-center gap-2">
+                <FolderKanban size={18} /> Criar novo orçamento
+              </h2>
+              <p className="mt-1.5 text-sm text-stone-500">
+                Selecione um cliente previamente cadastrado. Os dados permanentes serão vinculados automaticamente.
+              </p>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <CampoCliente
+                label="Nome do orçamento"
+                value={novoOrcamentoNome}
+                onChange={setNovoOrcamentoNome}
+                icon={<FileText size={14} />}
+                required
+                autoComplete="off"
+              />
+              <div>
+                <label className="text-xs font-medium text-stone-600 mb-1 flex items-center gap-1.5">
+                  <User size={14} /> Cliente cadastrado <span className="text-amber-600">*</span>
+                </label>
+                <select
+                  value={novoOrcamentoClienteId}
+                  onChange={(e) => setNovoOrcamentoClienteId(e.target.value)}
+                  autoFocus
+                  className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700"
+                >
+                  <option value="" disabled>Selecione o cliente</option>
+                  {[...clientes]
+                    .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"))
+                    .map((cliente) => (
+                      <option key={cliente.id} value={cliente.id}>
+                        {cliente.nome || "Cliente sem nome"}{cliente.documento ? ` — ${cliente.documento}` : ""}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setNovoOrcamentoAberto(false);
+                  setTab("clientes");
+                }}
+                className="px-4 py-2 text-sm text-stone-600 hover:text-stone-900"
+              >
+                Gerenciar clientes
+              </button>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNovoOrcamentoAberto(false)}
+                  className="px-4 py-2 text-sm border border-stone-300 rounded-md bg-white text-stone-700 hover:bg-stone-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={criarNovoOrcamento}
+                  disabled={!novoOrcamentoClienteId || !novoOrcamentoNome.trim()}
+                  className="px-4 py-2 text-sm font-medium bg-stone-900 text-white rounded-md hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Criar orçamento
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2270,6 +2504,12 @@ export default function App() {
             <nav className="p-2 space-y-1 max-lg:flex max-lg:overflow-x-auto max-lg:space-y-0 max-lg:gap-1">
               <SideTabBtn active={tab === "projetos"} onClick={() => solicitarMudancaAba("projetos")} icon={<FolderKanban size={15} />}>
                 Orçamentos ({projetos.length})
+              </SideTabBtn>
+              <SideTabBtn active={tab === "clientes"} onClick={() => solicitarMudancaAba("clientes")} icon={<User size={15} />}>
+                Clientes ({clientes.length})
+                {clientesDirty && (
+                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" title="Alterações não salvas" />
+                )}
               </SideTabBtn>
               <SideTabBtn active={tab === "cpus"} onClick={() => solicitarMudancaAba("cpus")} icon={<Database size={15} />}>
                 Base de CPUs ({cpus.length})
@@ -2417,51 +2657,7 @@ export default function App() {
                 <p className="text-xs text-stone-500">Gerencie, selecione ou crie novas pastas de projetos e fechamentos comerciais.</p>
               </div>
               <button
-                onClick={() => {
-                  const pId = uid();
-                  setProjetos((prev) => {
-                    const numeroProposta = proximoNumeroProposta(prev);
-                    return [
-                      ...prev,
-                      {
-                      id: pId,
-                      nome: `Novo Orçamento - ${prev.length + 1}`,
-                      numeracaoPropostaVersao: VERSAO_NUMERACAO_PROPOSTAS,
-                      criadoEm: new Date().toISOString(),
-                      atualizadoEm: "",
-                      cliente: "",
-                      clienteCadastro: { ...CLIENTE_PADRAO, numeroProposta },
-                      etapas: [{ id: uid(), nome: "Etapa Inicial", itens: [] }],
-                      precos: [],
-                      bancoPrecosInicializado: true,
-                      cronograma: {
-                        dataInicio: "",
-                        semanas: 12,
-                        horasSemana: 44,
-                        etapas: {},
-                      },
-                      bdi: {
-                        custoInicial: 0,
-                        admCentral: 0,
-                        contabilidade: 0,
-                        contingenciamento: 0,
-                        custoFinanceiro: 0,
-                        dasAnexoIV: 0,
-                        art: 0,
-                        retencaoInss: 0,
-                        lucro: 0,
-                        faturamentoDireto: false,
-                        collemAtivo: false,
-                        collemX: 1,
-                        collemY: 1,
-                        materiais: { admCentral: 0, contabilidade: 0, contingenciamento: 0, custoFinanceiro: 0, lucro: 0, dasAnexoIV: 0, art: 0 }
-                      }
-                      },
-                    ];
-                  });
-                  setProjetoAtivoId(pId);
-                  setTab("cliente");
-                }}
+                onClick={abrirNovoOrcamento}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 text-white rounded-lg text-xs font-medium hover:bg-stone-800"
               >
                 <Plus size={14} /> Novo Orçamento
@@ -2919,16 +3115,25 @@ export default function App() {
             </button>
           </div>
         )}
+        {tab === "clientes" && (
+          <ClientesTab
+            clientes={clientes}
+            projetos={projetos}
+            onSalvar={salvarClientesCompartilhados}
+            saving={busy}
+            dirty={clientesDirty}
+          />
+        )}
         {tab === "cliente" && projetoAtivo && (
           <CadastroCliente
             projeto={projetoAtivo}
             cliente={clienteAtivo}
             clientes={clientes}
             setProjetos={setProjetos}
-            setClientes={setClientes}
             setCliente={setClienteAtivo}
             completo={cadastroClienteOk}
             onContinuar={() => abrirAbaProjeto("custo")}
+            onGerenciarClientes={() => setTab("clientes")}
           />
         )}
         {tab === "custo" && projetoAtivo && (
@@ -3753,49 +3958,256 @@ export default function App() {
   );
 }
 
-function CadastroCliente({ projeto, cliente, clientes, setProjetos, setClientes, setCliente, completo, onContinuar }) {
+function ClientesTab({ clientes, projetos, onSalvar, saving, dirty }) {
+  const [busca, setBusca] = useState("");
+  const [rascunho, setRascunho] = useState(null);
+  const [mensagem, setMensagem] = useState("");
+
+  const clientesFiltrados = useMemo(() => {
+    const termos = normalizarBusca(busca).split(/\s+/).filter(Boolean);
+    return [...(clientes || [])]
+      .filter((cliente) => {
+        if (termos.length === 0) return true;
+        const texto = normalizarBusca(
+          `${cliente.nome || ""} ${cliente.documento || ""} ${cliente.contato || ""} ${cliente.telefone || ""} ${cliente.email || ""}`
+        );
+        return termos.every((termo) => texto.includes(termo));
+      })
+      .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+  }, [clientes, busca]);
+
+  const editarCliente = (cliente) => {
+    setRascunho({ id: cliente.id, ...dadosClienteCompartilhado(cliente) });
+    setMensagem("");
+  };
+
+  const iniciarNovoCliente = () => {
+    setRascunho({ id: "", ...dadosClienteCompartilhado({}) });
+    setMensagem("");
+  };
+
+  const atualizarRascunho = (campo, valor) => {
+    setRascunho((atual) => ({ ...atual, [campo]: valor }));
+    setMensagem("");
+  };
+
+  const salvarCadastro = async () => {
+    const nome = String(rascunho?.nome || "").trim();
+    if (!nome) {
+      setMensagem("Informe o nome ou a razão social do cliente.");
+      return;
+    }
+
+    const documento = String(rascunho.documento || "").replace(/\D/g, "");
+    const telefone = String(rascunho.telefone || "").replace(/\D/g, "");
+    const nomeNormalizado = normalizarBusca(nome);
+    const duplicado = (clientes || []).find((cliente) => {
+      if (cliente.id === rascunho.id) return false;
+      const documentoExistente = String(cliente.documento || "").replace(/\D/g, "");
+      if (documento && documentoExistente === documento) return true;
+      const telefoneExistente = String(cliente.telefone || "").replace(/\D/g, "");
+      return (
+        nomeNormalizado === normalizarBusca(cliente.nome || "") &&
+        telefone &&
+        telefone === telefoneExistente
+      );
+    });
+    if (duplicado) {
+      setMensagem(`Já existe um cadastro correspondente a "${duplicado.nome}".`);
+      return;
+    }
+
+    const clienteAtualizado = {
+      id: rascunho.id || uid(),
+      ...dadosClienteCompartilhado({ ...rascunho, nome }),
+      atualizadoEm: new Date().toISOString(),
+    };
+    const existe = (clientes || []).some((cliente) => cliente.id === clienteAtualizado.id);
+    const proximosClientes = existe
+      ? clientes.map((cliente) => (cliente.id === clienteAtualizado.id ? clienteAtualizado : cliente))
+      : [...clientes, clienteAtualizado];
+    const salvou = await onSalvar(proximosClientes);
+    if (salvou) {
+      setRascunho(clienteAtualizado);
+      setMensagem("Cliente salvo e disponível para todos os orçamentos.");
+    }
+  };
+
+  const quantidadeOrcamentos = (clienteId) =>
+    (projetos || []).filter((projeto) => projeto?.clienteCadastro?.clienteId === clienteId).length;
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.5fr)] gap-4 items-start">
+      <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden">
+        <div className="p-4 border-b border-stone-200 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-stone-800 flex items-center gap-2">
+                <User size={17} /> Clientes
+              </h2>
+              <p className="text-xs text-stone-500 mt-1">Cadastro mestre compartilhado entre os operadores.</p>
+            </div>
+            <button
+              type="button"
+              onClick={iniciarNovoCliente}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 text-white rounded-lg text-xs font-medium hover:bg-stone-800"
+            >
+              <Plus size={14} /> Novo
+            </button>
+          </div>
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome, documento ou contato..."
+              className="w-full pl-8 pr-3 py-2 text-xs border border-stone-300 rounded-lg bg-white outline-none focus:border-stone-700"
+            />
+          </div>
+        </div>
+
+        <div className="max-h-[620px] overflow-y-auto divide-y divide-stone-100">
+          {clientesFiltrados.length === 0 ? (
+            <div className="p-6 text-center text-xs text-stone-400">
+              {clientes.length === 0 ? "Nenhum cliente cadastrado." : "Nenhum cliente encontrado."}
+            </div>
+          ) : (
+            clientesFiltrados.map((cliente) => {
+              const selecionado = rascunho?.id === cliente.id;
+              const orcamentosVinculados = quantidadeOrcamentos(cliente.id);
+              return (
+                <button
+                  type="button"
+                  key={cliente.id}
+                  onClick={() => editarCliente(cliente)}
+                  className={`w-full p-3 text-left hover:bg-stone-50 ${selecionado ? "bg-stone-100" : "bg-white"}`}
+                >
+                  <span className="block text-sm font-semibold text-stone-800 truncate">{cliente.nome || "Cliente sem nome"}</span>
+                  <span className="mt-0.5 block text-[11px] text-stone-500 truncate">
+                    {cliente.documento || cliente.telefone || cliente.email || "Sem documento ou contato"}
+                  </span>
+                  <span className="mt-1 block text-[10px] text-stone-400">
+                    {orcamentosVinculados} orçamento(s) vinculado(s)
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white border border-stone-200 shadow-sm rounded-lg overflow-hidden">
+        {!rascunho ? (
+          <div className="p-12 text-center text-stone-400">
+            <Building2 size={35} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-medium">Selecione um cliente ou crie um novo cadastro.</p>
+          </div>
+        ) : (
+          <>
+            <div className="px-5 py-4 border-b border-stone-200 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-stone-800">
+                  {rascunho.id ? "Editar cliente" : "Cadastrar cliente"}
+                </h3>
+                <p className="text-xs text-stone-500 mt-1">
+                  Estes dados serão reutilizados na criação de novos orçamentos.
+                </p>
+              </div>
+              {dirty && <span className="text-[11px] font-semibold text-amber-700">Alterações pendentes</span>}
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <CampoCliente
+                  label="Nome ou razão social"
+                  value={rascunho.nome || ""}
+                  onChange={(valor) => atualizarRascunho("nome", valor)}
+                  icon={<User size={14} />}
+                  required
+                  autoComplete="organization"
+                />
+                <CampoCliente
+                  label="CPF/CNPJ"
+                  value={rascunho.documento || ""}
+                  onChange={(valor) => atualizarRascunho("documento", formatarCpfCnpj(valor))}
+                  icon={<FileText size={14} />}
+                  inputMode="numeric"
+                  maxLength={18}
+                />
+                <CampoCliente
+                  label="Contato"
+                  value={rascunho.contato || ""}
+                  onChange={(valor) => atualizarRascunho("contato", valor)}
+                  icon={<Building2 size={14} />}
+                  autoComplete="name"
+                />
+                <CampoCliente
+                  label="Telefone"
+                  value={rascunho.telefone || ""}
+                  onChange={(valor) => atualizarRascunho("telefone", formatarTelefone(valor))}
+                  icon={<Phone size={14} />}
+                  inputMode="tel"
+                  maxLength={15}
+                  autoComplete="tel"
+                />
+                <CampoCliente
+                  label="E-mail"
+                  value={rascunho.email || ""}
+                  onChange={(valor) => atualizarRascunho("email", valor)}
+                  icon={<Mail size={14} />}
+                  type="email"
+                  autoComplete="email"
+                />
+                <CampoCliente
+                  label="CEP"
+                  value={rascunho.cep || ""}
+                  onChange={(valor) => atualizarRascunho("cep", formatarCep(valor))}
+                  icon={<MapPin size={14} />}
+                  inputMode="numeric"
+                  maxLength={9}
+                  autoComplete="postal-code"
+                />
+              </div>
+              <CampoCliente
+                label="Endereço principal"
+                value={rascunho.endereco || ""}
+                onChange={(valor) => atualizarRascunho("endereco", valor)}
+                icon={<MapPin size={14} />}
+                autoComplete="street-address"
+              />
+
+              {mensagem && (
+                <p className={`text-xs ${mensagem.startsWith("Cliente salvo") ? "text-emerald-700" : "text-red-600"}`}>
+                  {mensagem}
+                </p>
+              )}
+
+              <div className="pt-3 border-t border-stone-200 flex justify-end">
+                <button
+                  type="button"
+                  onClick={salvarCadastro}
+                  disabled={saving || !String(rascunho.nome || "").trim()}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {saving ? <RefreshCw size={15} className="animate-spin" /> : <Save size={15} />}
+                  {saving ? "Salvando..." : "Salvar cliente"}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CadastroCliente({ projeto, cliente, clientes, setProjetos, setCliente, completo, onContinuar, onGerenciarClientes }) {
   const clientesOrdenados = useMemo(
     () => [...(clientes || [])].sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")),
     [clientes]
   );
 
   const atualizarCampo = (campo, valor) => {
-    if (!CAMPOS_CLIENTE_COMPARTILHADOS.includes(campo)) {
-      setCliente((prev) => ({ ...prev, [campo]: valor }));
-      return;
-    }
-
-    const clienteId = cliente.clienteId || uid();
-    const atualizadoEm = new Date().toISOString();
-    setClientes((atuais) => {
-      const existente = atuais.find((item) => item.id === clienteId);
-      const atualizado = {
-        id: clienteId,
-        ...dadosClienteCompartilhado(existente || cliente),
-        [campo]: valor,
-        atualizadoEm,
-      };
-      return existente
-        ? atuais.map((item) => (item.id === clienteId ? atualizado : item))
-        : [...atuais, atualizado];
-    });
-    setProjetos((atuais) =>
-      atuais.map((item) => {
-        const cadastroAtual = clienteDoProjeto(item);
-        const projetoAtivo = item.id === projeto.id;
-        if (!projetoAtivo && cadastroAtual.clienteId !== clienteId) return item;
-        const clienteCadastro = {
-          ...cadastroAtual,
-          clienteId,
-          [campo]: valor,
-        };
-        return {
-          ...item,
-          cliente: clienteCadastro.nome || "",
-          clienteCadastro,
-        };
-      })
-    );
+    setCliente((prev) => ({ ...prev, [campo]: valor }));
   };
 
   const selecionarCliente = (clienteId) => {
@@ -3873,7 +4285,7 @@ function CadastroCliente({ projeto, cliente, clientes, setProjetos, setClientes,
               : "bg-amber-50 border-amber-200 text-amber-700"
           }`}
         >
-          {completo ? "Cadastro completo" : "Nome e local obrigatórios"}
+          {completo ? "Cadastro completo" : "Cliente e local obrigatórios"}
         </span>
       </div>
 
@@ -3889,7 +4301,7 @@ function CadastroCliente({ projeto, cliente, clientes, setProjetos, setClientes,
                 onChange={(e) => selecionarCliente(e.target.value)}
                 className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm outline-none bg-white focus:border-stone-700 focus:ring-1 focus:ring-stone-700"
               >
-                <option value="">+ Cadastrar novo cliente</option>
+                <option value="" disabled>Selecione um cliente cadastrado</option>
                 {clientesOrdenados.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.nome || "Cliente sem nome"}{item.documento ? ` — ${item.documento}` : ""}
@@ -3897,9 +4309,13 @@ function CadastroCliente({ projeto, cliente, clientes, setProjetos, setClientes,
                 ))}
               </select>
             </div>
-            <span className="text-[11px] text-stone-500 pb-2">
-              {clientesOrdenados.length} cliente(s) disponível(is)
-            </span>
+            <button
+              type="button"
+              onClick={onGerenciarClientes}
+              className="px-3 py-2 text-xs font-medium border border-stone-300 rounded-lg bg-white text-stone-700 hover:bg-stone-100"
+            >
+              Gerenciar clientes ({clientesOrdenados.length})
+            </button>
           </div>
           <p className="text-[11px] text-stone-500 mt-2">
             Nome, contato, telefone, e-mail, CPF/CNPJ, CEP e endereço são compartilhados entre os orçamentos vinculados.
@@ -3914,12 +4330,12 @@ function CadastroCliente({ projeto, cliente, clientes, setProjetos, setClientes,
             icon={<FileText size={14} />}
           />
           <CampoCliente
-            label="Nome do cliente"
+            label="Cliente selecionado"
             value={cliente.nome || ""}
-            onChange={(valor) => atualizarCampo("nome", valor)}
+            onChange={() => {}}
             icon={<User size={14} />}
-            inputClassName={campoObrigatorio(cliente.nome)}
             required
+            readOnly
           />
           <CampoCliente
             label="Local da obra"
@@ -3935,33 +4351,37 @@ function CadastroCliente({ projeto, cliente, clientes, setProjetos, setClientes,
           <CampoCliente
             label="Contato"
             value={cliente.contato || ""}
-            onChange={(valor) => atualizarCampo("contato", valor)}
+            onChange={() => {}}
             icon={<Building2 size={14} />}
+            readOnly
           />
           <CampoCliente
             label="Telefone"
             value={cliente.telefone || ""}
-            onChange={(valor) => atualizarCampo("telefone", formatarTelefone(valor))}
+            onChange={() => {}}
             icon={<Phone size={14} />}
             inputMode="tel"
             maxLength={15}
             autoComplete="tel"
+            readOnly
           />
           <CampoCliente
             label="E-mail"
             value={cliente.email || ""}
-            onChange={(valor) => atualizarCampo("email", valor)}
+            onChange={() => {}}
             icon={<Mail size={14} />}
             type="email"
             autoComplete="email"
+            readOnly
           />
           <CampoCliente
             label="CPF/CNPJ"
             value={cliente.documento || ""}
-            onChange={(valor) => atualizarCampo("documento", formatarCpfCnpj(valor))}
+            onChange={() => {}}
             icon={<FileText size={14} />}
             inputMode="numeric"
             maxLength={18}
+            readOnly
           />
         </div>
 
@@ -3969,18 +4389,20 @@ function CadastroCliente({ projeto, cliente, clientes, setProjetos, setClientes,
           <CampoCliente
             label="CEP"
             value={cliente.cep || ""}
-            onChange={(valor) => atualizarCampo("cep", formatarCep(valor))}
+            onChange={() => {}}
             icon={<MapPin size={14} />}
             inputMode="numeric"
             maxLength={9}
             autoComplete="postal-code"
+            readOnly
           />
           <CampoCliente
             label="Endereço"
             value={cliente.endereco || ""}
-            onChange={(valor) => atualizarCampo("endereco", valor)}
+            onChange={() => {}}
             icon={<MapPin size={14} />}
             autoComplete="street-address"
+            readOnly
           />
           <div>
             <label className="text-xs font-medium text-stone-500 mb-1 flex items-center gap-1.5">
