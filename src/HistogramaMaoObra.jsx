@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from "react";
+import { alternarOrdenacao, ordenarLista } from "./utils/ordenacao";
+import { CabecalhoOrdenavel } from "./components/Ordenacao";
 import * as XLSX from "xlsx-js-style";
 import {
   ChevronDown,
@@ -102,6 +104,8 @@ export default function HistogramaMaoObra({
 }) {
   const [modo, setModo] = useState("equivalente");
   const [etapasAbertas, setEtapasAbertas] = useState({});
+  const [ordenacaoFuncoes, setOrdenacaoFuncoes] = useState({ key: "horas", direction: "desc" });
+  const [ordenacaoEtapas, setOrdenacaoEtapas] = useState({ key: "numero", direction: "asc" });
   const semanas = limitarInteiro(cronograma.semanas, 1, 104, 12);
   const horasPorSemana = Math.max(1, num(cronograma.horasSemana) || 44);
   const inicioProjeto = dataLocal(cronograma.dataInicio);
@@ -239,6 +243,36 @@ export default function HistogramaMaoObra({
         };
       });
   }, [etapasCalculadas, semanas, horasPorSemana]);
+
+  const funcoesOrdenadas = useMemo(
+    () =>
+      ordenarLista(funcoes, ordenacaoFuncoes, (funcao, key) => {
+        if (key.startsWith("semana:")) {
+          const indice = Number(key.split(":")[1]);
+          return modo === "recomendado"
+            ? funcao.recomendados[indice]
+            : funcao.equivalentes[indice];
+        }
+        return funcao[key];
+      }),
+    [funcoes, ordenacaoFuncoes, modo]
+  );
+
+  const etapasOrdenadas = useMemo(
+    () =>
+      ordenarLista(etapasCalculadas, ordenacaoEtapas, (etapa, key) => {
+        if (key === "periodo") return etapa.inicio;
+        if (key === "pico") return Math.max(0, ...etapa.equivalentes);
+        if (key === "equipe") return Math.max(0, ...etapa.recomendados);
+        return etapa[key];
+      }),
+    [etapasCalculadas, ordenacaoEtapas]
+  );
+
+  const ordenarFuncoesPor = (key, direcaoInicial = "asc") =>
+    setOrdenacaoFuncoes((atual) => alternarOrdenacao(atual, key, direcaoInicial));
+  const ordenarEtapasPor = (key, direcaoInicial = "asc") =>
+    setOrdenacaoEtapas((atual) => alternarOrdenacao(atual, key, direcaoInicial));
 
   const totais = useMemo(() => {
     const horasSemanais = Array.from({ length: semanas }, (_, indice) =>
@@ -573,15 +607,16 @@ export default function HistogramaMaoObra({
           >
             <thead>
               <tr className="bg-stone-100 text-stone-600">
-                <th className="sticky left-0 z-20 bg-stone-100 min-w-[250px] px-3 py-3 text-left border-b border-r border-stone-200">
-                  Função
-                </th>
-                <th className="min-w-[110px] px-3 py-3 text-right border-b border-r border-stone-200">
-                  Total HH
-                </th>
+                <CabecalhoOrdenavel coluna="descricao" ordenacao={ordenacaoFuncoes} onOrdenar={ordenarFuncoesPor} className="sticky left-0 z-20 bg-stone-100 min-w-[250px] px-3 py-3 border-b border-r border-stone-200">Função</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="horas" ordenacao={ordenacaoFuncoes} onOrdenar={ordenarFuncoesPor} className="min-w-[110px] px-3 py-3 border-b border-r border-stone-200" align="right" direcaoInicial="desc">Total HH</CabecalhoOrdenavel>
                 {Array.from({ length: semanas }, (_, indice) => (
-                  <th
+                  <CabecalhoOrdenavel
                     key={indice}
+                    coluna={`semana:${indice}`}
+                    ordenacao={ordenacaoFuncoes}
+                    onOrdenar={ordenarFuncoesPor}
+                    direcaoInicial="desc"
+                    align="center"
                     className="min-w-[92px] px-2 py-2 text-center border-b border-r border-stone-200"
                   >
                     <span className="block">S{indice + 1}</span>
@@ -590,12 +625,12 @@ export default function HistogramaMaoObra({
                         {rotuloPeriodo(inicioProjeto, indice)}
                       </span>
                     )}
-                  </th>
+                  </CabecalhoOrdenavel>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {funcoes.map((funcao) => (
+              {funcoesOrdenadas.map((funcao) => (
                 <tr key={funcao.chave} className="group">
                   <td className="sticky left-0 z-10 bg-white group-hover:bg-stone-50 px-3 py-2.5 border-b border-r border-stone-200">
                     <span
@@ -658,16 +693,16 @@ export default function HistogramaMaoObra({
           <table className="w-full min-w-[760px] text-xs">
             <thead>
               <tr className="bg-stone-100 text-stone-600">
-                <th className="px-4 py-3 text-left">Etapa</th>
-                <th className="px-3 py-3 text-center">Período</th>
-                <th className="px-3 py-3 text-right">Distribuído</th>
-                <th className="px-3 py-3 text-right">Total HH</th>
-                <th className="px-3 py-3 text-right">Pico equivalente</th>
-                <th className="px-4 py-3 text-right">Equipe recomendada</th>
+                <CabecalhoOrdenavel coluna="numero" ordenacao={ordenacaoEtapas} onOrdenar={ordenarEtapasPor} className="px-4 py-3">Etapa</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="periodo" ordenacao={ordenacaoEtapas} onOrdenar={ordenarEtapasPor} className="px-3 py-3" align="center">Período</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="somaPercentuais" ordenacao={ordenacaoEtapas} onOrdenar={ordenarEtapasPor} className="px-3 py-3" align="right" direcaoInicial="desc">Distribuído</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="horasTotais" ordenacao={ordenacaoEtapas} onOrdenar={ordenarEtapasPor} className="px-3 py-3" align="right" direcaoInicial="desc">Total HH</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="pico" ordenacao={ordenacaoEtapas} onOrdenar={ordenarEtapasPor} className="px-3 py-3" align="right" direcaoInicial="desc">Pico equivalente</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="equipe" ordenacao={ordenacaoEtapas} onOrdenar={ordenarEtapasPor} className="px-4 py-3" align="right" direcaoInicial="desc">Equipe recomendada</CabecalhoOrdenavel>
               </tr>
             </thead>
             <tbody>
-              {etapasCalculadas.map((etapa) => {
+              {etapasOrdenadas.map((etapa) => {
                 const aberta = !!etapasAbertas[etapa.id];
                 return (
                   <React.Fragment key={etapa.id}>

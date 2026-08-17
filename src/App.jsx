@@ -39,6 +39,8 @@ import {
   itensAtivosDaEtapa,
 } from "./utils/alternativas";
 import { proximoCodigoCpuPropria } from "./utils/cpuCodigo";
+import { alternarOrdenacao, ordenarLista } from "./utils/ordenacao";
+import { BotaoOrdenacao, CabecalhoOrdenavel } from "./components/Ordenacao";
 import {
   deleteGoogleDriveProject,
   loadGoogleDriveSnapshot,
@@ -1275,7 +1277,14 @@ export default function App() {
   const [cpusExpandidas, setCpusExpandidas] = useState({});
   const [buscaProjetos, setBuscaProjetos] = useState("");
   const [filtroStatusProjetos, setFiltroStatusProjetos] = useState("todos");
-  const [ordenacaoProjetos, setOrdenacaoProjetos] = useState("recentes");
+  const [ordenacaoProjetos, setOrdenacaoProjetos] = useState({
+    key: "dataOrdenacao",
+    direction: "desc",
+  });
+  const [ordenacaoMaoObra, setOrdenacaoMaoObra] = useState({ key: "descricao", direction: "asc" });
+  const [ordenacaoMateriais, setOrdenacaoMateriais] = useState({ key: "material", direction: "asc" });
+  const [ordenacaoPlanilhaCusto, setOrdenacaoPlanilhaCusto] = useState({ key: "estrutura", direction: "asc" });
+  const [ordenacaoPlanilhaVenda, setOrdenacaoPlanilhaVenda] = useState({ key: "estrutura", direction: "asc" });
   const [paginaProjetos, setPaginaProjetos] = useState(1);
   const [projetoParaExcluir, setProjetoParaExcluir] = useState(null);
   const [textoConfirmacaoExclusao, setTextoConfirmacaoExclusao] = useState("");
@@ -1973,6 +1982,68 @@ export default function App() {
     };
   }, [bdi, etapas, cpus, catalogMap, projetoAtivo]);
 
+  const valorCustoItem = (item, key) => {
+    const quantidade = num(item.quantidade);
+    const custoUnitario = cpuValorUnit(item.insumos, cpus, catalogMap);
+    if (key === "estrutura") return item.servico || item.descricao || item.codigo || "";
+    if (key === "unidade") return item.unidade || "";
+    if (key === "quantidade") return quantidade;
+    if (key === "unitario") return custoUnitario;
+    return quantidade * custoUnitario;
+  };
+
+  const valorCustoInsumo = (insumo, quantidadeItem, key) => {
+    const valorUnitario = insumoValorUnitario(insumo, cpus, catalogMap);
+    const quantidade = num(insumo.coeficiente) * quantidadeItem;
+    if (key === "estrutura") return insumo.descricao || insumo.codigo || "";
+    if (key === "unidade") return insumo.unidade || "";
+    if (key === "quantidade") return quantidade;
+    if (key === "unitario") return valorUnitario;
+    return quantidade * valorUnitario;
+  };
+
+  const valorCustoEtapa = (etapa, key) => {
+    const itens = itensAtivosDaEtapa(etapa);
+    if (key === "estrutura") return etapa.nome || "";
+    if (key === "quantidade") return itens.reduce((total, item) => total + num(item.quantidade), 0);
+    if (key === "total") return itens.reduce((total, item) => total + valorCustoItem(item, "total"), 0);
+    return "";
+  };
+
+  const valorVendaItem = (item, key) => {
+    const quantidade = num(item.quantidade);
+    const unitario = (item.insumos || []).reduce((total, insumo) => {
+      const custo = num(insumo.coeficiente) * insumoValorUnitario(insumo, cpus, catalogMap);
+      return total + custo * fatorVendaInsumo(insumo, bdiCalc);
+    }, 0);
+    if (key === "estrutura") return item.servico || item.descricao || item.codigo || "";
+    if (key === "unidade") return item.unidade || "";
+    if (key === "quantidade") return quantidade;
+    if (key === "unitario") return unitario;
+    return quantidade * unitario;
+  };
+
+  const valorVendaInsumo = (insumo, quantidadeItem, key) => {
+    const unitario = insumoValorUnitario(insumo, cpus, catalogMap) * fatorVendaInsumo(insumo, bdiCalc);
+    const quantidade = num(insumo.coeficiente) * quantidadeItem;
+    if (key === "estrutura") return insumo.descricao || insumo.codigo || "";
+    if (key === "unidade") return insumo.unidade || "";
+    if (key === "quantidade") return quantidade;
+    if (key === "unitario") return unitario;
+    return quantidade * unitario;
+  };
+
+  const valorVendaEtapa = (etapa, key) => {
+    const itens = itensAtivosDaEtapa(etapa);
+    if (key === "estrutura") return etapa.nome || "";
+    if (key === "quantidade") return itens.reduce((total, item) => total + num(item.quantidade), 0);
+    if (key === "total") return itens.reduce((total, item) => total + valorVendaItem(item, "total"), 0);
+    return "";
+  };
+
+  const etapasCustoOrdenadas = ordenarLista(etapas, ordenacaoPlanilhaCusto, valorCustoEtapa);
+  const etapasVendaOrdenadas = ordenarLista(etapas, ordenacaoPlanilhaVenda, valorVendaEtapa);
+
   const comparativosAlternativas = useMemo(
     () =>
       calcularComparativosAlternativas(etapas, bdi, cpus, catalogMap).map(
@@ -2076,21 +2147,15 @@ export default function App() {
       return correspondeBusca && correspondeStatus;
     });
 
-    return [...filtrados].sort((a, b) => {
-      if (ordenacaoProjetos === "nome") {
-        return String(a.projeto.nome || "").localeCompare(
-          String(b.projeto.nome || ""),
-          "pt-BR",
-          { sensitivity: "base" }
-        );
-      }
-      if (ordenacaoProjetos === "maior_valor") {
-        return b.valorVenda - a.valorVenda;
-      }
-      if (a.dataOrdenacao !== b.dataOrdenacao) {
-        return b.dataOrdenacao - a.dataOrdenacao;
-      }
-      return a.indiceOriginal - b.indiceOriginal;
+    return ordenarLista(filtrados, ordenacaoProjetos, (resumo, key) => {
+      if (key === "numero") return resumo.cliente.numeroProposta || "";
+      if (key === "orcamento") return resumo.projeto.nome || "";
+      if (key === "cliente") return `${resumo.cliente.nome || ""} ${resumo.cliente.local || ""}`;
+      if (key === "desconto") return resumo.descontoNegociacao;
+      if (key === "custoDireto") return resumo.custoDireto;
+      if (key === "valorVenda") return resumo.valorVenda;
+      if (key === "status") return resumo.statusProjeto.label || "";
+      return resumo.dataOrdenacao;
     });
   }, [
     projetosComResumo,
@@ -2098,6 +2163,12 @@ export default function App() {
     filtroStatusProjetos,
     ordenacaoProjetos,
   ]);
+
+  const ordenarProjetosPor = (key, direcaoInicial = "asc") => {
+    setOrdenacaoProjetos((atual) =>
+      alternarOrdenacao(atual, key, direcaoInicial)
+    );
+  };
 
   const projetosPorPagina = 10;
   const totalPaginasProjetos = Math.max(
@@ -2702,14 +2773,24 @@ export default function App() {
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none"
                   />
                   <select
-                    value={ordenacaoProjetos}
-                    onChange={(e) => setOrdenacaoProjetos(e.target.value)}
+                    value={`${ordenacaoProjetos.key}:${ordenacaoProjetos.direction}`}
+                    onChange={(e) => {
+                      const [key, direction] = e.target.value.split(":");
+                      setOrdenacaoProjetos({ key, direction });
+                    }}
                     aria-label="Ordenar orçamentos"
                     className="w-full h-10 pl-9 pr-3 text-sm bg-white border border-stone-300 rounded-md outline-none focus:border-stone-600 appearance-none"
                   >
-                    <option value="recentes">Mais recentes</option>
-                    <option value="nome">Ordem alfabética</option>
-                    <option value="maior_valor">Maior valor</option>
+                    <option value="dataOrdenacao:desc">Mais recentes</option>
+                    <option value="dataOrdenacao:asc">Mais antigos</option>
+                    <option value="numero:asc">Número crescente</option>
+                    <option value="numero:desc">Número decrescente</option>
+                    <option value="orcamento:asc">Orçamento A–Z</option>
+                    <option value="cliente:asc">Cliente A–Z</option>
+                    <option value="status:asc">Status A–Z</option>
+                    <option value="valorVenda:desc">Maior venda</option>
+                    <option value="valorVenda:asc">Menor venda</option>
+                    <option value="custoDireto:desc">Maior custo</option>
                   </select>
                   <ChevronDown
                     size={14}
@@ -2733,14 +2814,14 @@ export default function App() {
                   <div className="hidden xl:block overflow-x-auto">
                     <div className="min-w-[1060px]">
                       <div className="grid grid-cols-[88px_minmax(145px,1.2fr)_minmax(165px,1.3fr)_90px_105px_115px_80px_105px_108px] gap-3 px-5 py-3 bg-stone-50 border-b border-stone-200 text-[10px] font-semibold uppercase text-stone-500">
-                        <div>Número</div>
-                        <div>Orçamento</div>
-                        <div>Cliente / Local</div>
-                        <div className="text-right">Desconto</div>
-                        <div className="text-right">Custo direto</div>
-                        <div className="text-right">Preço de venda</div>
-                        <div>Atualizado</div>
-                        <div>Status</div>
+                        <BotaoOrdenacao coluna="numero" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Número</BotaoOrdenacao>
+                        <BotaoOrdenacao coluna="orcamento" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Orçamento</BotaoOrdenacao>
+                        <BotaoOrdenacao coluna="cliente" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Cliente / Local</BotaoOrdenacao>
+                        <BotaoOrdenacao coluna="desconto" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Desconto</BotaoOrdenacao>
+                        <BotaoOrdenacao coluna="custoDireto" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Custo direto</BotaoOrdenacao>
+                        <BotaoOrdenacao coluna="valorVenda" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Preço de venda</BotaoOrdenacao>
+                        <BotaoOrdenacao coluna="dataOrdenacao" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} direcaoInicial="desc">Atualizado</BotaoOrdenacao>
+                        <BotaoOrdenacao coluna="status" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Status</BotaoOrdenacao>
                         <div className="text-right">Ações</div>
                       </div>
 
@@ -3239,11 +3320,11 @@ export default function App() {
 
             <div id="area-planilha-custo" className="border border-stone-200 rounded-lg overflow-hidden bg-white">
               <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-stone-100 border-b border-stone-200 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="col-span-6">Estrutura (Etapa / CPU / Insumo)</span>
-                <span className="col-span-1 text-center">Und</span>
-                <span className="col-span-1.5 text-right">Qtd Prop.</span>
-                <span className="col-span-1.5 text-right">Custo Unit</span>
-                <span className="col-span-2 text-right">Custo Total</span>
+                <BotaoOrdenacao coluna="estrutura" ordenacao={ordenacaoPlanilhaCusto} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaCusto((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-6">Estrutura (Etapa / CPU / Insumo)</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="unidade" ordenacao={ordenacaoPlanilhaCusto} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaCusto((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="center">Und</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="quantidade" ordenacao={ordenacaoPlanilhaCusto} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaCusto((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Qtd Prop.</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="unitario" ordenacao={ordenacaoPlanilhaCusto} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaCusto((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Custo Unit</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="total" ordenacao={ordenacaoPlanilhaCusto} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaCusto((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-2" align="right" direcaoInicial="desc">Custo Total</BotaoOrdenacao>
               </div>
 
               <div className="divide-y divide-stone-200 max-h-[600px] overflow-y-auto">
@@ -3252,7 +3333,7 @@ export default function App() {
                     Nenhuma etapa cadastrada neste orçamento.
                   </div>
                 ) : (
-                  etapas.map((etapa, idxEtapa) => {
+                  etapasCustoOrdenadas.map((etapa, idxEtapa) => {
                     const numEtapa = idxEtapa + 1;
                     const etapaId = etapa.id || `etapa-${idxEtapa}`;
                     const isEtapaAberta = !!etapasExpandidas[etapaId];
@@ -3272,7 +3353,7 @@ export default function App() {
                           </span>
                         </div>
 
-                        {isEtapaAberta && itensAtivosDaEtapa(etapa).map((item, idxItem) => {
+                        {isEtapaAberta && ordenarLista(itensAtivosDaEtapa(etapa), ordenacaoPlanilhaCusto, valorCustoItem).map((item, idxItem) => {
                           const numCpu = `${numEtapa}.${idxItem + 1}`;
                           const itemId = item.id || `item-${numCpu}`;
                           const isCpuAberta = !!cpusExpandidas[itemId];
@@ -3299,7 +3380,7 @@ export default function App() {
 
                               {isCpuAberta && (item.insumos || []).length > 0 && (
                                 <div className="bg-stone-50/50 divide-y divide-stone-100/60 border-t border-b border-stone-100">
-                                  {(item.insumos || []).map((insumo, idxInsumo) => {
+                                  {ordenarLista(item.insumos || [], ordenacaoPlanilhaCusto, (insumo, key) => valorCustoInsumo(insumo, qtdItem, key)).map((insumo, idxInsumo) => {
                                     const numInsumo = `${numCpu}.${idxInsumo + 1}`;
                                     const precoUnit = insumoValorUnitario(insumo, cpus, catalogMap);
                                     const qtdCalculada = num(insumo.coeficiente) * qtdItem;
@@ -3621,11 +3702,11 @@ export default function App() {
 
             <div id="area-planilha-venda" className="border border-stone-200 rounded-lg overflow-hidden bg-white">
               <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-stone-100 border-b border-stone-200 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="col-span-6">Estrutura (Etapa / CPU / Insumo)</span>
-                <span className="col-span-1 text-center">Und</span>
-                <span className="col-span-1.5 text-right">Qtd Prop.</span>
-                <span className="col-span-1.5 text-right">Preço Unit Venda</span>
-                <span className="col-span-2 text-right">Total Venda</span>
+                <BotaoOrdenacao coluna="estrutura" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-6">Estrutura (Etapa / CPU / Insumo)</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="unidade" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="center">Und</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="quantidade" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Qtd Prop.</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="unitario" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Preço Unit Venda</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="total" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-2" align="right" direcaoInicial="desc">Total Venda</BotaoOrdenacao>
               </div>
 
               <div className="divide-y divide-stone-200 max-h-[600px] overflow-y-auto">
@@ -3634,7 +3715,7 @@ export default function App() {
                     Nenhuma etapa cadastrada neste orçamento.
                   </div>
                 ) : (
-                  etapas.map((etapa, idxEtapa) => {
+                  etapasVendaOrdenadas.map((etapa, idxEtapa) => {
                     const numEtapa = idxEtapa + 1;
                     const etapaId = etapa.id || `etapa-${idxEtapa}`;
                     const isEtapaAberta = !!etapasExpandidas[etapaId];
@@ -3663,7 +3744,7 @@ export default function App() {
                           </span>
                         </div>
 
-                        {isEtapaAberta && itensAtivosDaEtapa(etapa).map((item, idxItem) => {
+                        {isEtapaAberta && ordenarLista(itensAtivosDaEtapa(etapa), ordenacaoPlanilhaVenda, valorVendaItem).map((item, idxItem) => {
                           const numCpu = `${numEtapa}.${idxItem + 1}`;
                           const itemId = item.id || `item-${numCpu}`;
                           const isCpuAberta = !!cpusExpandidas[itemId];
@@ -3695,7 +3776,7 @@ export default function App() {
 
                               {isCpuAberta && (item.insumos || []).length > 0 && (
                                 <div className="bg-stone-50/50 divide-y divide-stone-100/60 border-t border-b border-stone-100">
-                                  {(item.insumos || []).map((insumo, idxInsumo) => {
+                                  {ordenarLista(item.insumos || [], ordenacaoPlanilhaVenda, (insumo, key) => valorVendaInsumo(insumo, qtdItem, key)).map((insumo, idxInsumo) => {
                                     const numInsumo = `${numCpu}.${idxInsumo + 1}`;
                                     const custoUnit = insumoValorUnitario(insumo, cpus, catalogMap);
                                     
@@ -3788,20 +3869,16 @@ export default function App() {
 
             <div className="border border-stone-200 rounded-lg overflow-hidden">
               <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-stone-100 border-b border-stone-200 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="col-span-6">Descrição do Profissional</span>
-                <span className="col-span-1 text-center">Und</span>
-                <span className="col-span-1.5 text-right">Horas Totais</span>
-                <span className="col-span-1.5 text-right">Valor Unit.</span>
-                <span className="col-span-2 text-right">Subtotal Direto</span>
+                <BotaoOrdenacao coluna="descricao" ordenacao={ordenacaoMaoObra} onOrdenar={(key, inicial) => setOrdenacaoMaoObra((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-6">Descrição do Profissional</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="unidade" ordenacao={ordenacaoMaoObra} onOrdenar={(key, inicial) => setOrdenacaoMaoObra((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="center">Und</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="qtd" ordenacao={ordenacaoMaoObra} onOrdenar={(key, inicial) => setOrdenacaoMaoObra((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Horas Totais</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="valorUnit" ordenacao={ordenacaoMaoObra} onOrdenar={(key, inicial) => setOrdenacaoMaoObra((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Valor Unit.</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="total" ordenacao={ordenacaoMaoObra} onOrdenar={(key, inicial) => setOrdenacaoMaoObra((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-2" align="right" direcaoInicial="desc">Subtotal Direto</BotaoOrdenacao>
               </div>
 
               <div className="divide-y divide-stone-200 max-h-[500px] overflow-y-auto">
                 {(() => {
-                  const listaMo = consolidarMaoDeObra(
-                    etapas,
-                    cpus,
-                    catalogMap
-                  );
+                  const listaMo = maoObraOrdenada;
                   if (listaMo.length === 0) {
                     return <div className="p-8 text-center text-stone-400 italic text-xs">Nenhuma mão de obra localizada no orçamento.</div>;
                   }
@@ -3884,12 +3961,12 @@ export default function App() {
             <div className="border border-stone-200 rounded-lg overflow-x-auto">
               <div className="min-w-[820px]">
               <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-stone-100 border-b border-stone-200 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="col-span-5">Material</span>
-                <span className="col-span-1 text-center">Und</span>
-                <span className="col-span-1.5 text-right">Qtd Total</span>
-                <span className="col-span-1.5 text-right">Preço Unit.</span>
-                <span className="col-span-2 text-right">Total Bruto</span>
-                <span className="col-span-1 text-center">Fat. direto</span>
+                <BotaoOrdenacao coluna="material" ordenacao={ordenacaoMateriais} onOrdenar={(key, inicial) => setOrdenacaoMateriais((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-5">Material</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="unidade" ordenacao={ordenacaoMateriais} onOrdenar={(key, inicial) => setOrdenacaoMateriais((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="center">Und</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="quantidade" ordenacao={ordenacaoMateriais} onOrdenar={(key, inicial) => setOrdenacaoMateriais((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Qtd Total</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="valorUnitario" ordenacao={ordenacaoMateriais} onOrdenar={(key, inicial) => setOrdenacaoMateriais((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Preço Unit.</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="valorTotal" ordenacao={ordenacaoMateriais} onOrdenar={(key, inicial) => setOrdenacaoMateriais((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-2" align="right" direcaoInicial="desc">Total Bruto</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="faturamento" ordenacao={ordenacaoMateriais} onOrdenar={(key, inicial) => setOrdenacaoMateriais((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="center">Fat. direto</BotaoOrdenacao>
               </div>
 
               <div className="divide-y divide-stone-200 max-h-[500px] overflow-y-auto">
@@ -3897,7 +3974,7 @@ export default function App() {
                   <div className="p-8 text-center text-stone-400 italic text-xs">Nenhum material localizado neste orçamento.</div>
                 ) : (
                   <>
-                    {processarMateriais.map((material) => {
+                    {materiaisOrdenados.map((material) => {
                       const marcado = !!bdi.faturamentoDireto && (
                         !Array.isArray(bdi.materiaisFaturamentoDireto) ||
                         bdi.materiaisFaturamentoDireto.includes(material.chave)
@@ -3963,19 +4040,28 @@ function ClientesTab({ clientes, projetos, onSalvar, saving, dirty }) {
   const [busca, setBusca] = useState("");
   const [rascunho, setRascunho] = useState(null);
   const [mensagem, setMensagem] = useState("");
+  const [ordenacao, setOrdenacao] = useState({ key: "nome", direction: "asc" });
 
   const clientesFiltrados = useMemo(() => {
     const termos = normalizarBusca(busca).split(/\s+/).filter(Boolean);
-    return [...(clientes || [])]
+    const filtrados = [...(clientes || [])]
       .filter((cliente) => {
         if (termos.length === 0) return true;
         const texto = normalizarBusca(
           `${cliente.nome || ""} ${cliente.documento || ""} ${cliente.contato || ""} ${cliente.telefone || ""} ${cliente.email || ""}`
         );
         return termos.every((termo) => texto.includes(termo));
-      })
-      .sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
-  }, [clientes, busca]);
+      });
+    return ordenarLista(filtrados, ordenacao, (cliente, key) => {
+      if (key === "orcamentos") {
+        return (projetos || []).filter(
+          (projeto) => projeto?.clienteCadastro?.clienteId === cliente.id
+        ).length;
+      }
+      if (key === "atualizadoEm") return Date.parse(cliente.atualizadoEm || "") || 0;
+      return cliente[key] || "";
+    });
+  }, [clientes, projetos, busca, ordenacao]);
 
   const editarCliente = (cliente) => {
     setRascunho({ id: cliente.id, ...dadosClienteCompartilhado(cliente) });
@@ -4064,6 +4150,24 @@ function ClientesTab({ clientes, projetos, onSalvar, saving, dirty }) {
               placeholder="Buscar por nome, documento ou contato..."
               className="w-full pl-8 pr-3 py-2 text-xs border border-stone-300 rounded-lg bg-white outline-none focus:border-stone-700"
             />
+          </div>
+          <div className="relative">
+            <ArrowUpDown size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+            <select
+              value={`${ordenacao.key}:${ordenacao.direction}`}
+              onChange={(evento) => {
+                const [key, direction] = evento.target.value.split(":");
+                setOrdenacao({ key, direction });
+              }}
+              className="w-full pl-8 pr-3 py-2 text-xs border border-stone-300 rounded-lg bg-white outline-none focus:border-stone-700"
+              aria-label="Ordenar clientes"
+            >
+              <option value="nome:asc">Nome A–Z</option>
+              <option value="nome:desc">Nome Z–A</option>
+              <option value="documento:asc">CPF/CNPJ crescente</option>
+              <option value="orcamentos:desc">Mais orçamentos</option>
+              <option value="atualizadoEm:desc">Atualizados recentemente</option>
+            </select>
           </div>
         </div>
 
@@ -4629,6 +4733,7 @@ function SideTabBtn({ active, onClick, icon, children, disabled }) {
 function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, saving, baseDirty }) {
   const [query, setQuery] = useState("");
   const [fonteFiltro, setFonteFiltro] = useState("Todas");
+  const [ordenacao, setOrdenacao] = useState({ key: "codigo", direction: "asc" });
   const [editing, setEditing] = useState(null);
   const [expanded, setExpanded] = useState({});
   const [importMsg, setImportMsg] = useState("");
@@ -4657,18 +4762,20 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
     return tokens;
   }, [query]);
 
-  const filtered = useMemo(
-    () =>
-      cpuSearchIndex
+  const filtered = useMemo(() => {
+      const correspondentes = cpuSearchIndex
         .filter(({ cpu, haystack }) => {
           const matchesFonte = fonteFiltro === "Todas" || cpu.fonte === fonteFiltro;
           if (!matchesFonte) return false;
           if (queryTokens.length === 0) return true;
           return queryTokens.every((t) => haystack.includes(t));
         })
-        .map(({ cpu }) => cpu),
-    [cpuSearchIndex, fonteFiltro, queryTokens]
-  );
+        .map(({ cpu }) => cpu);
+      return ordenarLista(correspondentes, ordenacao, (cpu, key) => {
+        if (key === "valor") return cpuValorUnit(cpu.insumos, cpus, catalogMap);
+        return cpu[key] || "";
+      });
+    }, [cpuSearchIndex, fonteFiltro, queryTokens, ordenacao, cpus, catalogMap]);
 
   const insumosFiltrados = useMemo(
     () => buscarInsumosCatalogo(catalogMap, query),
@@ -5027,6 +5134,27 @@ function CpuLibrary({ cpus, setCpus, fileInputRef, catalogMap, onSaveBase, savin
         <select value={fonteFiltro} onChange={(e) => { setFonteFiltro(e.target.value); setActiveIndex(-1); }} className="px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white">
           {fontes.map((f) => <option key={f}>{f}</option>)}
         </select>
+        <div className="relative">
+          <ArrowUpDown size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+          <select
+            value={`${ordenacao.key}:${ordenacao.direction}`}
+            onChange={(evento) => {
+              const [key, direction] = evento.target.value.split(":");
+              setOrdenacao({ key, direction });
+              setActiveIndex(-1);
+            }}
+            className="pl-8 pr-3 py-2 text-sm border border-stone-300 rounded-lg bg-white"
+            aria-label="Ordenar CPUs"
+          >
+            <option value="codigo:asc">Código crescente</option>
+            <option value="codigo:desc">Código decrescente</option>
+            <option value="descricao:asc">Descrição A–Z</option>
+            <option value="descricao:desc">Descrição Z–A</option>
+            <option value="fonte:asc">Fonte A–Z</option>
+            <option value="valor:desc">Maior valor</option>
+            <option value="valor:asc">Menor valor</option>
+          </select>
+        </div>
         <label className="flex items-center gap-1.5 px-3 py-2 text-sm border border-stone-300 rounded-lg bg-white cursor-pointer hover:bg-stone-100">
           <Upload size={15} /> Importar/Atualizar Base
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImport} />
@@ -5133,6 +5261,7 @@ function IconBtn({ onClick, title, children }) {
 /* ---------------- TABELA DE INSUMOS PADRONIZADA ---------------- */
 function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUpsertPreco }) {
   const [subCpusExpandidas, setSubCpusExpandidas] = useState({});
+  const [ordenacao, setOrdenacao] = useState({ key: "", direction: "asc" });
   const setMany = (id, patch) => onChange(insumos.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   const set = (id, field, value) => setMany(id, { [field]: value });
   const remove = (id) => onChange(insumos.filter((i) => i.id !== id));
@@ -5146,6 +5275,44 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
       setMany(i.id, { valorUnitario: entry.valorUnitario, tipo: i.tipo || entry.tipo, unidade: i.unidade || entry.unidade });
     }
   };
+
+  const insumosOrdenados = useMemo(
+    () =>
+      ordenarLista(insumos, ordenacao, (insumo, key) => {
+        const valorUnitario = insumoValorUnitario(insumo, cpus, catalogMap);
+        if (key === "valorUnitario") return valorUnitario;
+        if (key === "subtotal") return num(insumo.coeficiente) * valorUnitario;
+        return insumo[key] || "";
+      }),
+    [insumos, ordenacao, cpus, catalogMap]
+  );
+
+  const materiaisOrdenados = useMemo(
+    () =>
+      ordenarLista(processarMateriais, ordenacaoMateriais, (material, key) => {
+        if (key === "faturamento") {
+          return !!bdi.faturamentoDireto && (
+            !Array.isArray(bdi.materiaisFaturamentoDireto) ||
+            bdi.materiaisFaturamentoDireto.includes(material.chave)
+          );
+        }
+        return material[key];
+      }),
+    [processarMateriais, ordenacaoMateriais, bdi.faturamentoDireto, bdi.materiaisFaturamentoDireto]
+  );
+
+  const maoObraConsolidada = useMemo(
+    () => consolidarMaoDeObra(etapas, cpus, catalogMap),
+    [etapas, cpus, catalogMap]
+  );
+
+  const maoObraOrdenada = useMemo(
+    () => ordenarLista(maoObraConsolidada, ordenacaoMaoObra, (registro, key) => registro[key]),
+    [maoObraConsolidada, ordenacaoMaoObra]
+  );
+
+  const ordenarPor = (key, direcaoInicial = "asc") =>
+    setOrdenacao((atual) => alternarOrdenacao(atual, key, direcaoInicial));
 
   const renderSubCpuTree = (
     cpu,
@@ -5270,17 +5437,17 @@ function InsumoTable({ insumos, readOnly, onChange, catalogMap, cpus = [], onUps
     <table className="w-full text-xs">
       <thead>
         <tr className="text-stone-400 text-left">
-          <th className="font-normal py-1 pr-2 w-24">Tipo</th>
-          <th className="font-normal py-1 pr-2">Insumo</th>
-          <th className="font-normal py-1 pr-2 w-16">Un.</th>
-          <th className="font-normal py-1 pr-2 w-24 text-right">Coeficiente</th>
-          <th className="font-normal py-1 pr-2 w-28 text-right">Valor Unit. (R$)</th>
-          <th className="font-normal py-1 pr-2 w-24 text-right">Subtotal</th>
+          <CabecalhoOrdenavel coluna="tipo" ordenacao={ordenacao} onOrdenar={ordenarPor} className="font-normal py-1 pr-2 w-24">Tipo</CabecalhoOrdenavel>
+          <CabecalhoOrdenavel coluna="descricao" ordenacao={ordenacao} onOrdenar={ordenarPor} className="font-normal py-1 pr-2">Insumo</CabecalhoOrdenavel>
+          <CabecalhoOrdenavel coluna="unidade" ordenacao={ordenacao} onOrdenar={ordenarPor} className="font-normal py-1 pr-2 w-16">Un.</CabecalhoOrdenavel>
+          <CabecalhoOrdenavel coluna="coeficiente" ordenacao={ordenacao} onOrdenar={ordenarPor} className="font-normal py-1 pr-2 w-24" align="right" direcaoInicial="desc">Coeficiente</CabecalhoOrdenavel>
+          <CabecalhoOrdenavel coluna="valorUnitario" ordenacao={ordenacao} onOrdenar={ordenarPor} className="font-normal py-1 pr-2 w-28" align="right" direcaoInicial="desc">Valor Unit. (R$)</CabecalhoOrdenavel>
+          <CabecalhoOrdenavel coluna="subtotal" ordenacao={ordenacao} onOrdenar={ordenarPor} className="font-normal py-1 pr-2 w-24" align="right" direcaoInicial="desc">Subtotal</CabecalhoOrdenavel>
           {!readOnly && <th className="w-7"></th>}
         </tr>
       </thead>
       <tbody>
-        {insumos.map((i) => {
+        {insumosOrdenados.map((i) => {
           const valorEfetivo = insumoValorUnitario(i, cpus, catalogMap);
           const subCpu = findSubCpu(i, cpus);
           const insumosSubCpu = subCpu ? insumosResolvidosSubCpu(i, subCpu) : [];
@@ -6951,6 +7118,7 @@ function CronogramaSemanal({
     largura: 0,
     larguraConteudo: 0,
   });
+  const [ordenacao, setOrdenacao] = useState({ key: "numero", direction: "asc" });
 
   const linhas = useMemo(
     () =>
@@ -7033,6 +7201,20 @@ function CronogramaSemanal({
       }),
     [linhas, semanas, totalProjeto]
   );
+
+  const linhasOrdenadas = useMemo(
+    () =>
+      ordenarLista(linhasCalculadas, ordenacao, (linha, key) => {
+        if (key.startsWith("semana:")) {
+          return linha.valoresSemanais[Number(key.split(":")[1])] || 0;
+        }
+        return linha[key];
+      }),
+    [linhasCalculadas, ordenacao]
+  );
+
+  const ordenarCronogramaPor = (key, direcaoInicial = "asc") =>
+    setOrdenacao((atual) => alternarOrdenacao(atual, key, direcaoInicial));
 
   const totaisSemanais = useMemo(
     () =>
@@ -7228,7 +7410,7 @@ function CronogramaSemanal({
       );
     }
 
-    const dados = linhasCalculadas.map((linha) => {
+    const dados = linhasOrdenadas.map((linha) => {
       const registro = [
         `${linha.numero}. ${linha.nome}`,
         linha.totalVenda,
@@ -7467,24 +7649,19 @@ function CronogramaSemanal({
           >
             <thead>
               <tr className="bg-stone-100 text-stone-600">
-                <th className="sticky left-0 z-20 bg-stone-100 min-w-[270px] px-3 py-3 text-left border-b border-r border-stone-200 font-semibold">
-                  Etapa
-                </th>
-                <th className="min-w-[120px] px-3 py-3 text-right border-b border-r border-stone-200 font-semibold">
-                  Venda
-                </th>
-                <th className="min-w-[88px] px-3 py-3 text-right border-b border-r border-stone-200 font-semibold">
-                  Peso físico
-                </th>
-                <th className="min-w-[72px] px-2 py-3 text-center border-b border-r border-stone-200 font-semibold">
-                  Início
-                </th>
-                <th className="min-w-[72px] px-2 py-3 text-center border-b border-r border-stone-200 font-semibold">
-                  Duração
-                </th>
+                <CabecalhoOrdenavel coluna="numero" ordenacao={ordenacao} onOrdenar={ordenarCronogramaPor} className="sticky left-0 z-20 bg-stone-100 min-w-[270px] px-3 py-3 border-b border-r border-stone-200 font-semibold">Etapa</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="totalVenda" ordenacao={ordenacao} onOrdenar={ordenarCronogramaPor} className="min-w-[120px] px-3 py-3 border-b border-r border-stone-200 font-semibold" align="right" direcaoInicial="desc">Venda</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="pesoFisico" ordenacao={ordenacao} onOrdenar={ordenarCronogramaPor} className="min-w-[88px] px-3 py-3 border-b border-r border-stone-200 font-semibold" align="right" direcaoInicial="desc">Peso físico</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="inicio" ordenacao={ordenacao} onOrdenar={ordenarCronogramaPor} className="min-w-[72px] px-2 py-3 border-b border-r border-stone-200 font-semibold" align="center">Início</CabecalhoOrdenavel>
+                <CabecalhoOrdenavel coluna="duracao" ordenacao={ordenacao} onOrdenar={ordenarCronogramaPor} className="min-w-[72px] px-2 py-3 border-b border-r border-stone-200 font-semibold" align="center" direcaoInicial="desc">Duração</CabecalhoOrdenavel>
                 {Array.from({ length: semanas }, (_, indice) => (
-                  <th
+                  <CabecalhoOrdenavel
                     key={indice}
+                    coluna={`semana:${indice}`}
+                    ordenacao={ordenacao}
+                    onOrdenar={ordenarCronogramaPor}
+                    direcaoInicial="desc"
+                    align="center"
                     className="min-w-[118px] px-2 py-2 text-center border-b border-r border-stone-200 font-semibold"
                   >
                     <span className="block">Semana {indice + 1}</span>
@@ -7493,12 +7670,12 @@ function CronogramaSemanal({
                         {rotuloSemana(indice)}
                       </span>
                     )}
-                  </th>
+                  </CabecalhoOrdenavel>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {linhasCalculadas.map((linha) => (
+              {linhasOrdenadas.map((linha) => (
                 <tr key={linha.id} className="group">
                   <td className="sticky left-0 z-10 bg-white group-hover:bg-stone-50 px-3 py-3 border-b border-r border-stone-200">
                     <span className="block font-semibold text-stone-800">
@@ -7685,6 +7862,23 @@ function BdiInput({ label, value, amount, onChange, maxPercent }) {
 
 /* ---------------- ABA FECHAMENTO: PREÇO DE VENDA ---------------- */
 function PrecoVenda({ etapas, FatorBdi, grandTotal, nomeProjeto, cpus, catalogMap }) {
+  const [ordenacao, setOrdenacao] = useState({ key: "descricao", direction: "asc" });
+  const valorItem = (item, key) => {
+    const custoUnitario = cpuValorUnit(item.insumos, cpus, catalogMap);
+    if (key === "descricao") return item.servico || item.descricao || "";
+    if (key === "quantidade") return num(item.quantidade);
+    if (key === "unidade") return item.unidade || "";
+    if (key === "unitario") return custoUnitario * FatorBdi;
+    return num(item.quantidade) * custoUnitario * FatorBdi;
+  };
+  const etapasOrdenadas = ordenarLista(etapas, ordenacao, (etapa, key) => {
+    if (key === "descricao") return etapa.nome || "";
+    if (key === "total") {
+      return itensAtivosDaEtapa(etapa).reduce((total, item) => total + valorItem(item, "total"), 0);
+    }
+    return "";
+  });
+
   const exportarXls = () => {
     const wb = XLSX.utils.book_new();
     const rows = [
@@ -7709,15 +7903,33 @@ function PrecoVenda({ etapas, FatorBdi, grandTotal, nomeProjeto, cpus, catalogMa
 
   return (
     <div className="bg-white border border-stone-200 rounded-lg p-4 space-y-4">
-      <div className="border-b border-stone-100 pb-2 flex justify-between items-center">
+      <div className="border-b border-stone-100 pb-2 flex flex-wrap justify-between items-center gap-2">
         <h3 className="font-semibold text-sm text-stone-800">Planilha Sintética de Fechamento (Preço de Venda)</h3>
-        <button onClick={exportarXls} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-300 rounded-lg font-medium bg-white hover:bg-stone-50 text-stone-700">
-          <Download size={13} /> Exportar .xlsx
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={`${ordenacao.key}:${ordenacao.direction}`}
+            onChange={(evento) => {
+              const [key, direction] = evento.target.value.split(":");
+              setOrdenacao({ key, direction });
+            }}
+            className="px-2 py-1.5 text-xs border border-stone-300 rounded-lg bg-white"
+            aria-label="Ordenar fechamento"
+          >
+            <option value="descricao:asc">Descrição A–Z</option>
+            <option value="descricao:desc">Descrição Z–A</option>
+            <option value="quantidade:desc">Maior quantidade</option>
+            <option value="unitario:desc">Maior valor unitário</option>
+            <option value="total:desc">Maior total</option>
+            <option value="total:asc">Menor total</option>
+          </select>
+          <button onClick={exportarXls} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-stone-300 rounded-lg font-medium bg-white hover:bg-stone-50 text-stone-700">
+            <Download size={13} /> Exportar .xlsx
+          </button>
+        </div>
       </div>
       <div className="space-y-3">
-        {etapas.map((e) => {
-          const itensAtivos = itensAtivosDaEtapa(e);
+        {etapasOrdenadas.map((e) => {
+          const itensAtivos = ordenarLista(itensAtivosDaEtapa(e), ordenacao, valorItem);
           const custoEtapa = itensAtivos.reduce((s, it) => s + num(it.quantidade) * cpuValorUnit(it.insumos, cpus, catalogMap), 0);
           return (
             <div key={e.id} className="border border-stone-100 rounded-lg overflow-hidden">
