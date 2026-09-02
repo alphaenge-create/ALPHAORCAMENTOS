@@ -4,7 +4,7 @@ import { arredondarMoeda, somarMoeda, validarProposta } from "../utils/venda.js"
 const aplicarDescontoNegociacao = (bruto, desconto) => arredondarMoeda(Math.max(0, bruto - desconto));
 
 const XLSX_MOEDA = '_-"R$"\\ * #,##0.00_-;\\-"R$"\\ * #,##0.00_-;_-"R$"\\ * "-"??_-;_-@';
-const XLSX_NUMERO = "#,##0.00##########";
+const XLSX_NUMERO = "#,##0.00";
 
 const estiloVendaBase = {
   font: { name: "Aptos Narrow", sz: 12 },
@@ -151,8 +151,8 @@ export const criarAbaVendaModelo = (
   rows.push([null, "TOTAL GERAL", null, null, null, null, null, totalGeral]);
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  // Quantidades e unitários preservam a precisão; o valor de cada CPU é
-  // arredondado a centavos antes de somar as etapas, como na tela e no DOCX.
+  // As células exibem duas casas, mas preservam os valores originais nas
+  // fórmulas. Somente o total de cada CPU é arredondado antes da soma.
   itemRows.forEach((row) => { ws[`G${row}`].f = `ROUND(E${row}*F${row},2)`; });
   groupRows.forEach(({ row, itemStartRow, itemEndRow }) => {
     ws[`H${row}`].f = itemEndRow >= itemStartRow ? `ROUND(SUM(G${itemStartRow}:G${itemEndRow}),2)` : "0";
@@ -177,8 +177,8 @@ export const criarAbaVendaModelo = (
     { wch: 5.33203125 },
     { wch: 56.33203125 },
     { wch: 6.33203125 },
-    { wch: 19 },
-    { wch: 25 },
+    { wch: 8 },
+    { wch: 13.21875 },
     { wch: 14 },
     { wch: 15.5546875 },
     { wch: 4.5546875 },

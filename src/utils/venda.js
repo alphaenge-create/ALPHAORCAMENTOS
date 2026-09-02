@@ -38,8 +38,8 @@ export const ratearMoeda = (total, pesos) => {
   for (let i = 0; i < faltantes; i++) prioridade[i % prioridade.length].centavos++;
   return parcelas.map((p) => p.centavos / 100);
 };
-// Quantidades e unitários não perdem casas decimais antes da multiplicação.
-export const formatarPrecisao = (valor) => Number(valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 12 });
+// Duas casas apenas na apresentação; o cálculo mantém os números originais.
+export const formatarPrecisao = (valor) => Number(valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const fatorVendaInsumo = (insumo, bdiCalc = {}, cliente = bdiCalc.cliente || {}) => {
   if (materialPorContaCliente(cliente) && insumoEhMaterial(insumo?.tipo)) return 0;

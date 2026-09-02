@@ -50,3 +50,40 @@ test('DOCX real usa os mesmos valores e recusa totais incoerentes antes de expor
   assert.ok(xml.includes('500,00'));
   await assert.rejects(criarPropostaAlphaDocxBlob({ ...dados, totalGeral: 999 }, { logoData }), /Total da proposta/);
 });
+
+test('Venda expandida exibe preços e quantidades com duas casas decimais', () => {
+  const fracionario = structuredClone(projeto);
+  const item = fracionario.etapas[0].itens[0];
+  item.quantidade = 1.23456;
+  item.insumos[0].valorUnitario = 674.1573033707865;
+  const source = fs.readFileSync(arquivoApp, 'utf8')
+    .replace('useState("projetos")', 'useState("precovenda")')
+    .replace('const [projetos, setProjetos] = useState([])', `const [projetos, setProjetos] = useState(${JSON.stringify([fracionario])})`)
+    .replace('const [projetoAtivoId, setProjetoAtivoId] = useState("")', 'const [projetoAtivoId, setProjetoAtivoId] = useState("teste")')
+    .replace('const [etapasExpandidas, setEtapasExpandidas] = useState({})', 'const [etapasExpandidas, setEtapasExpandidas] = useState({ e: true })')
+    .replace('const [cpusExpandidas, setCpusExpandidas] = useState({})', 'const [cpusExpandidas, setCpusExpandidas] = useState({ i: true })');
+  const { default: App } = carregar(fs.realpathSync(arquivoApp), source);
+  const html = renderToStaticMarkup(React.createElement(App));
+  assert.ok(html.includes('674,16'));
+  assert.ok(html.includes('1,23'));
+  assert.ok(!html.includes('674,157'));
+  assert.ok(!html.includes('1,235'));
+});
+
+test('DOCX apresenta duas casas decimais e mantém o total calculado com precisão interna', async () => {
+  const { criarPropostaAlphaDocxBlob } = carregar(fs.realpathSync(new URL('../src/propostas/alphaProposal.js', import.meta.url)));
+  const quantidade = 1.23456;
+  const unitario = 674.1573033707865;
+  const total = Math.round(quantidade * unitario * 100) / 100;
+  const dados = { grupos: [{ numero: '1', nome: 'Teste', total, itens: [{ numero: '1.1', descricao: 'Serviço', unidade: 'm²', quantidade, unitario, total }] }], totalGeral: total };
+  const original = JSON.stringify(dados);
+  const logoData = fs.readFileSync(new URL('../src/assets/alpha-engenharia-logo.png', import.meta.url));
+  const blob = await criarPropostaAlphaDocxBlob(dados, { logoData });
+  const zip = require('fflate').unzipSync(new Uint8Array(await blob.arrayBuffer()));
+  const xml = new TextDecoder().decode(zip['word/document.xml']);
+  assert.ok(xml.includes('674,16'));
+  assert.ok(xml.includes('1,23'));
+  assert.ok(xml.includes(total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
+  assert.ok(!xml.includes('674,157'));
+  assert.equal(JSON.stringify(dados), original);
+});

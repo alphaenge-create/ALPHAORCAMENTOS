@@ -109,7 +109,20 @@ test('quantidades fracionárias e grandes não arredondam o unitário antes da m
     assert.equal(itemVendaResumo(etapas[0].itens[0], r, [], null).quantidade, quantidade);
     conferir(etapas, r);
   }
-  assert.equal(formatarPrecisao(0.000123456), '0,000123456');
+  assert.equal(formatarPrecisao(0.000123456), '0,00');
+});
+
+test('apresentação usa duas casas sem truncar valores nem alterar os totais calculados', () => {
+  for (const [valor, exibido] of [[674.1573033707865, '674,16'], [1.239, '1,24'], [1.2, '1,20'], [0, '0,00'], [1234567.89123, '1.234.567,89']]) {
+    assert.equal(formatarPrecisao(valor), exibido);
+  }
+  const etapas = etapasCom([folha('MO', 674.1573033707865)], 12.3456789);
+  const r = calcularPrecoVendaProjeto(etapas, {});
+  const item = r.grupos[0].itens[0];
+  assert.equal(item.quantidade, 12.3456789);
+  assert.equal(item.unitario, 674.1573033707865);
+  assert.equal(item.total, arredondarMoeda(12.3456789 * 674.1573033707865));
+  conferir(etapas, r);
 });
 
 test('subtotais e total são somas dos itens em centavos, não dependem da ordenação', () => {
@@ -140,6 +153,9 @@ for (const modelo of ['alpha', 'collem']) test(`XLSX ${modelo}: fórmulas comple
   assert.equal(copy.G5.f, ws.G5.f);
   assert.equal(copy.H4.f, ws.H4.f);
   assert.equal(copy.F5.v, grupos[0].itens[0].unitario);
+  assert.equal(ws.E5.z, '#,##0.00');
+  assert.equal(ws.F5.z, '#,##0.00');
+  assert.equal(XLSX.utils.format_cell(copy.F5), '666.67');
 });
 
 test('campos numéricos em branco são zero, sem bloqueio nem alteração dos dados', () => {

@@ -3022,7 +3022,7 @@ export default function App() {
                                   {numCpu}. {item.codigo ? `[${item.codigo}] ` : ""}{item.servico || item.descricao}
                                 </span>
                                 <span className="col-span-1 text-center font-mono text-stone-400">{item.unidade}</span>
-                                <span className="col-span-1.5 text-right font-mono">{qtdItem.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                                <span className="col-span-1.5 text-right font-mono">{formatarPrecisao(qtdItem)}</span>
                                 <span className="col-span-1.5 text-right font-mono text-stone-400">R$ {fmt(custoUnitCpu)}</span>
                                 <span className="col-span-2 text-right font-mono text-stone-800">
                                   R$ {fmt(qtdItem * custoUnitCpu)}
@@ -3044,7 +3044,7 @@ export default function App() {
                                         </span>
                                         <span className="col-span-1 text-center font-mono text-stone-400 uppercase text-[10px]">{insumo.unidade || "un"}</span>
                                         <span className="col-span-1.5 text-right font-mono text-stone-600">
-                                          {qtdCalculada.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                          {formatarPrecisao(qtdCalculada)}
                                         </span>
                                         <span className="col-span-1.5 text-right font-mono text-stone-400">R$ {fmt(precoUnit)}</span>
                                         <span className="col-span-2 text-right font-mono font-medium text-stone-700">
@@ -3356,7 +3356,7 @@ export default function App() {
 
             <div id="area-planilha-venda" className="border border-stone-200 rounded-lg overflow-hidden bg-white">
               <div className="px-4 py-2 text-xs text-stone-600 bg-stone-50 border-b border-stone-200">
-                Quantidades e preços unitários preservam a precisão do cálculo. Cada CPU é arredondada a centavos; etapas e total somam esses valores.
+                Valores exibidos com duas casas decimais. Os cálculos preservam a precisão original; cada CPU é arredondada a centavos e etapas e total somam esses valores.
                 {" Campos numéricos em branco são considerados zero."}
                 {materialPorContaCliente(clienteAtivo) && " Materiais por conta do cliente são excluídos, preservando mão de obra, equipamentos e outros serviços dentro das subcomposições."}
               </div>
@@ -3453,7 +3453,7 @@ export default function App() {
                                         </span>
                                         <span className="col-span-1 text-center font-mono text-stone-400 uppercase text-[10px]">{insumo.unidade || "un"}</span>
                                         <span className="col-span-1.5 text-right font-mono text-stone-600">
-                                          {qtdCalculada.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                          {formatarPrecisao(qtdCalculada)}
                                         </span>
                                         <span className="col-span-1.5 text-right font-mono text-stone-400">R$ {fmt(precoVendaInsumo)}</span>
                                         <span className="col-span-2 text-right font-mono font-medium text-blue-700">
@@ -3644,7 +3644,7 @@ export default function App() {
                         <div key={material.chave} className={`grid grid-cols-12 gap-2 px-4 py-2 text-xs items-center uppercase ${marcado ? "bg-emerald-50/60" : "hover:bg-stone-50/60"}`}>
                           <span className="col-span-5 font-medium text-stone-800 truncate" title={material.material}>{material.material}</span>
                           <span className="col-span-1 text-center font-mono text-stone-400">{material.unidade}</span>
-                          <span className="col-span-1.5 text-right font-mono text-stone-900">{material.quantidade.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</span>
+                          <span className="col-span-1.5 text-right font-mono text-stone-900">{formatarPrecisao(material.quantidade)}</span>
                           <span className="col-span-1.5 text-right font-mono text-stone-400">R$ {fmt(material.valorUnitario)}</span>
                           <span className="col-span-2 text-right font-mono font-semibold text-emerald-700">R$ {fmt(material.valorTotal)}</span>
                           <label className="col-span-1 flex justify-center cursor-pointer" title="Aplicar faturamento direto neste material">
