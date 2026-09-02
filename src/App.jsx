@@ -41,6 +41,13 @@ import {
 import { proximoCodigoCpuPropria } from "./utils/cpuCodigo";
 import { alternarOrdenacao, ordenarLista } from "./utils/ordenacao";
 import { BotaoOrdenacao, CabecalhoOrdenavel } from "./components/Ordenacao";
+import { criarAbaVendaModelo, XLSX_MOEDA } from "./propostas/vendaXlsx.js";
+import {
+  BDI_PADRAO, materialPorContaCliente, materialFaturamentoDireto,
+  insumoEhMaterial,
+  itemVendaResumo, montarItensProposta, calcularPrecoVendaProjeto,
+  valorVendaUnitarioInsumo, validarProposta, arredondarMoeda, somarMoeda, formatarPrecisao, ratearMoeda,
+} from "./utils/venda.js";
 import {
   deleteGoogleDriveProject,
   loadGoogleDriveSnapshot,
@@ -54,20 +61,6 @@ import {
 } from "./services/orcamentoStore";
 import alphaLogo from "./assets/alpha-engenharia-logo.png";
 
-const BDI_PADRAO = {
-  custoInicial: 0,
-  admCentral: 0.04,
-  contabilidade: 0.01,
-  contingenciamento: 0.02,
-  custoFinanceiro: 0.03,
-  dasAnexoIV: 0.13,
-  art: 0,
-  retencaoInss: 0,
-  lucro: 0.42,
-  collemAtivo: false,
-  collemX: 1,
-  collemY: 1,
-};
 
 const CLIENTE_PADRAO = {
   clienteId: "",
@@ -367,36 +360,6 @@ const prepararBancosDePrecosPorProjeto = (projetos = [], precosLegados = []) => 
   };
 };
 
-const materialPorContaCliente = (cliente) => cliente?.regimeMateriais === "cliente";
-const materialFaturamentoDireto = (cliente) => cliente?.regimeMateriais === "faturamentoDireto";
-const insumoEhMaterial = (tipo) => {
-  const t = String(tipo || "").toUpperCase().trim();
-  return t === "MAT" || t === "MATERIAL" || (!t.includes("MO") && !t.includes("MÃO") && !t.includes("MAO") && !t.includes("EQUIP"));
-};
-
-const insumoEhMaoDeObra = (tipo) => {
-  const t = String(tipo || "").toUpperCase().trim();
-  return t === "MO" || t.includes("MÃO DE OBRA") || t.includes("MAO DE OBRA");
-};
-
-const insumoComFaturamentoDireto = (insumo, configuracao = {}, cliente = {}) => {
-  if (!insumoEhMaterial(insumo?.tipo)) return false;
-  if (!configuracao?.faturamentoDireto && !materialFaturamentoDireto(cliente)) return false;
-
-  const selecionados = configuracao?.materiaisFaturamentoDireto;
-  if (!Array.isArray(selecionados)) return true;
-  return selecionados.includes(precoKey(insumo?.descricao));
-};
-
-const fatorVendaInsumo = (insumo, bdiCalc = {}, cliente = {}) => {
-  if (insumoComFaturamentoDireto(insumo, bdiCalc, cliente)) {
-    return num(bdiCalc.FatorBdiMateriais) || 1;
-  }
-  if (insumoEhMaoDeObra(insumo?.tipo)) {
-    return num(bdiCalc.FatorBdiMaoObra) || num(bdiCalc.FatorBdi) || 1;
-  }
-  return num(bdiCalc.FatorBdi) || 1;
-};
 
 const buscarInsumosCatalogo = (catalogMap, textoBusca, limite = 12) => {
   const busca = normalizarBusca(textoBusca).trim();
@@ -460,7 +423,7 @@ const descontoNegociacaoProjeto = (projeto) =>
   Math.max(0, numeroMoeda(projeto?.descontoNegociacao));
 
 const aplicarDescontoNegociacao = (valorBruto, desconto) =>
-  Math.max(0, num(valorBruto) - Math.max(0, numeroMoeda(desconto)));
+  arredondarMoeda(Math.max(0, num(valorBruto) - Math.max(0, numeroMoeda(desconto))));
 
 const VERSAO_NUMERACAO_PROPOSTAS = 1;
 const ANO_INICIAL_PROPOSTAS = 2026;
@@ -533,41 +496,6 @@ const escapeHtml = (valor) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
-const itemVendaResumo = (item, bdiCalc, cpus, catalogMap, cliente = {}) => {
-  const quantidade = num(item.quantidade);
-  let total = 0;
-
-  (item.insumos || []).forEach((ins) => {
-    const isMaterial = insumoEhMaterial(ins.tipo);
-    if (materialPorContaCliente(cliente) && isMaterial) return;
-
-    const custoBase = num(ins.coeficiente) * quantidade * insumoValorUnitario(ins, cpus, catalogMap);
-    total += custoBase * fatorVendaInsumo(ins, bdiCalc, cliente);
-  });
-
-  return {
-    quantidade,
-    total,
-    unitario: quantidade > 0 ? total / quantidade : 0,
-  };
-};
-
-const montarItensProposta = (etapas, bdiCalc, cpus, catalogMap, cliente = {}) =>
-  (etapas || []).map((etapa, idxEtapa) => {
-    const itens = itensAtivosDaEtapa(etapa).map((item, idxItem) => ({
-      numero: `${idxEtapa + 1}.${idxItem + 1}`,
-      descricao: item.servico || item.descricao || "",
-      unidade: item.unidade || "",
-      ...itemVendaResumo(item, bdiCalc, cpus, catalogMap, cliente),
-    }));
-
-    return {
-      numero: String(idxEtapa + 1),
-      nome: etapa.nome || `Etapa ${idxEtapa + 1}`,
-      total: itens.reduce((s, item) => s + item.total, 0),
-      itens,
-    };
-  });
 
 const montarComparativosProposta = (
   etapas,
@@ -616,221 +544,10 @@ const montarComparativosProposta = (
     }))
   );
 
-const XLSX_MOEDA = '_-"R$"\\ * #,##0.00_-;\\-"R$"\\ * #,##0.00_-;_-"R$"\\ * "-"??_-;_-@';
-const XLSX_NUMERO = "###,###,##0.00";
-
-const estiloVendaBase = {
-  font: { name: "Aptos Narrow", sz: 12 },
-  alignment: { vertical: "center" },
-};
-
-const estiloVendaTitulo = {
-  font: { name: "Aptos Narrow", sz: 14, bold: true },
-  fill: { fgColor: { rgb: "7B9A56" } },
-  alignment: { horizontal: "center", vertical: "center", wrapText: true },
-};
-
-const estiloVendaCabecalho = {
-  font: { name: "Aptos Narrow", sz: 12, bold: true },
-  fill: { fgColor: { rgb: "D8D8D8" } },
-  alignment: { vertical: "center" },
-};
-
-const estiloVendaGrupo = {
-  font: { name: "Aptos Narrow", sz: 12, bold: true },
-  fill: { fgColor: { rgb: "E2EFD9" } },
-  alignment: { vertical: "center" },
-};
-
-const estiloVendaTotal = {
-  ...estiloVendaGrupo,
-  font: { name: "Aptos Narrow", sz: 11, bold: true },
-  alignment: { horizontal: "center", vertical: "center" },
-};
-
-const estiloVendaCollemBase = {
-  font: { name: "Calibri", sz: 11 },
-  alignment: { vertical: "center" },
-};
-
-const estiloVendaCollemTitulo = {
-  font: { name: "Calibri", sz: 14, bold: true, color: { rgb: "FFFFFF" } },
-  fill: { fgColor: { rgb: "538DD5" } },
-  alignment: { horizontal: "center", vertical: "center", wrapText: true },
-};
-
-const estiloVendaCollemCabecalho = {
-  font: { name: "Calibri", sz: 12, bold: true },
-  fill: { fgColor: { rgb: "DCE6F1" } },
-  alignment: { vertical: "center" },
-};
-
-const estiloVendaCollemGrupo = {
-  font: { name: "Calibri", sz: 12, bold: true },
-  fill: { fgColor: { rgb: "C5D9F1" } },
-  alignment: { vertical: "center" },
-};
-
-const estiloVendaCollemTotal = {
-  font: { name: "Calibri", sz: 12, bold: true, color: { rgb: "FFFFFF" } },
-  fill: { fgColor: { rgb: "538DD5" } },
-  alignment: { horizontal: "center", vertical: "center" },
-};
-
-const aplicarEstiloLinha = (ws, row, startCol, endCol, style) => {
-  for (let col = startCol; col <= endCol; col += 1) {
-    const addr = XLSX.utils.encode_cell({ r: row - 1, c: col - 1 });
-    if (!ws[addr]) ws[addr] = { t: "s", v: "" };
-    ws[addr].s = style;
-  }
-};
-
-const aplicarFormatoNumerico = (ws, row, cols, formato) => {
-  cols.forEach((col) => {
-    const addr = XLSX.utils.encode_cell({ r: row - 1, c: col - 1 });
-    if (ws[addr]) ws[addr].z = formato;
-  });
-};
-
-const aplicarAlinhamento = (ws, row, cols, alignment) => {
-  cols.forEach((col) => {
-    const addr = XLSX.utils.encode_cell({ r: row - 1, c: col - 1 });
-    if (!ws[addr]) return;
-    ws[addr].s = {
-      ...(ws[addr].s || {}),
-      alignment: { ...(ws[addr].s?.alignment || {}), ...alignment },
-    };
-  });
-};
-
-const criarAbaVendaModelo = (
-  grupos,
-  fatorVenda = 1,
-  modelo = "alpha",
-  descontoNegociacao = 0
-) => {
-  const collem = modelo === "collem";
-  const estilos = collem
-    ? {
-        base: estiloVendaCollemBase,
-        titulo: estiloVendaCollemTitulo,
-        cabecalho: estiloVendaCollemCabecalho,
-        grupo: estiloVendaCollemGrupo,
-        total: estiloVendaCollemTotal,
-      }
-    : {
-        base: estiloVendaBase,
-        titulo: estiloVendaTitulo,
-        cabecalho: estiloVendaCabecalho,
-        grupo: estiloVendaGrupo,
-        total: estiloVendaTotal,
-      };
-  const rows = [[], [null, "PLANILHA DE MATERIAL"], [null, "ITEM", "DESCRIÇÃO DOS SERVIÇOS", "UNID.", "QUANT.", "VALOR UNIT.", "VALOR TOTAL", "TOTAL DO ITEM", fatorVenda, 250, 150]];
-  const groupRows = [];
-  const itemRows = [];
-
-  grupos.forEach((grupo) => {
-    const groupRowNumber = rows.length + 1;
-    const itemStartRow = groupRowNumber + 1;
-    rows.push([null, grupo.numero, grupo.nome, null, null, null, null, grupo.total]);
-    groupRows.push({ row: groupRowNumber, itemStartRow });
-
-    grupo.itens.forEach((item) => {
-      const itemRowNumber = rows.length + 1;
-      rows.push([null, item.numero, item.descricao, item.unidade, item.quantidade, item.unitario, item.total, null]);
-      itemRows.push(itemRowNumber);
-    });
-
-    const itemEndRow = rows.length;
-    const group = groupRows[groupRows.length - 1];
-    group.itemEndRow = itemEndRow;
-    rows[groupRowNumber - 1][7] = grupo.total;
-  });
-
-  rows.push([]);
-  const totalBruto = grupos.reduce((total, grupo) => total + num(grupo.total), 0);
-  const descontoAplicado = Math.min(
-    totalBruto,
-    Math.max(0, num(descontoNegociacao))
-  );
-  let descontoRow = 0;
-  if (descontoAplicado > 0) {
-    descontoRow = rows.length + 1;
-    rows.push([null, "DESCONTO DA NEGOCIAÇÃO", null, null, null, null, null, -descontoAplicado]);
-  }
-  const totalRow = rows.length + 1;
-  const totalGeral = aplicarDescontoNegociacao(totalBruto, descontoAplicado);
-  rows.push([null, "TOTAL GERAL", null, null, null, null, null, totalGeral]);
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  const totalAddr = XLSX.utils.encode_cell({ r: totalRow - 1, c: 7 });
-  const ultimaLinhaValores = Math.max(4, totalRow - 1);
-  ws[totalAddr] = {
-    t: "n",
-    v: totalGeral,
-    f: `SUM(H4:H${ultimaLinhaValores})`,
-    z: XLSX_MOEDA,
-  };
-  ws["!merges"] = [
-    { s: { r: 1, c: 1 }, e: { r: 1, c: 7 } },
-    ...(descontoRow > 0
-      ? [{ s: { r: descontoRow - 1, c: 1 }, e: { r: descontoRow - 1, c: 6 } }]
-      : []),
-    { s: { r: totalRow - 1, c: 1 }, e: { r: totalRow - 1, c: 6 } },
-  ];
-  ws["!cols"] = [
-    { wch: 8.88671875 },
-    { wch: 5.33203125 },
-    { wch: 56.33203125 },
-    { wch: 6.33203125 },
-    { wch: 8 },
-    { wch: 13.21875 },
-    { wch: 14 },
-    { wch: 15.5546875 },
-    { wch: 4.5546875 },
-    { wch: 4 },
-  ];
-
-  ws["!rows"] = rows.map(() => ({ hpt: 14.25 }));
-  aplicarEstiloLinha(ws, 2, 2, 8, estilos.titulo);
-  aplicarEstiloLinha(ws, 3, 2, 8, estilos.cabecalho);
-  aplicarAlinhamento(ws, 3, [2, 4, 5, 6, 7, 8], { horizontal: "center" });
-  aplicarAlinhamento(ws, 3, [3], { horizontal: "left", wrapText: true });
-  aplicarFormatoNumerico(ws, 3, [8], XLSX_MOEDA);
-  aplicarFormatoNumerico(ws, 3, [9], "0.00");
-
-  groupRows.forEach(({ row }) => {
-    aplicarEstiloLinha(ws, row, 2, 8, estilos.grupo);
-    aplicarAlinhamento(ws, row, [2, 4, 5], { horizontal: "center" });
-    aplicarAlinhamento(ws, row, [3], { horizontal: "left", wrapText: true });
-    aplicarAlinhamento(ws, row, [8], { horizontal: "right" });
-    aplicarFormatoNumerico(ws, row, [8], XLSX_MOEDA);
-  });
-
-  itemRows.forEach((row) => {
-    aplicarEstiloLinha(ws, row, 2, 8, estilos.base);
-    aplicarAlinhamento(ws, row, [2, 4, 5], { horizontal: "center" });
-    aplicarAlinhamento(ws, row, [3], { horizontal: "left", wrapText: true });
-    aplicarAlinhamento(ws, row, [6, 7, 8], { horizontal: "right" });
-    aplicarFormatoNumerico(ws, row, [5], XLSX_NUMERO);
-    aplicarFormatoNumerico(ws, row, [6, 7, 8], collem ? XLSX_MOEDA : XLSX_NUMERO);
-  });
-
-  if (descontoRow > 0) {
-    aplicarEstiloLinha(ws, descontoRow, 2, 8, estilos.grupo);
-    aplicarAlinhamento(ws, descontoRow, [2], { horizontal: "left" });
-    aplicarAlinhamento(ws, descontoRow, [8], { horizontal: "right" });
-    aplicarFormatoNumerico(ws, descontoRow, [8], XLSX_MOEDA);
-  }
-
-  aplicarEstiloLinha(ws, totalRow, 2, 8, estilos.total);
-  aplicarFormatoNumerico(ws, totalRow, [8], XLSX_MOEDA);
-
-  return ws;
-};
 
 const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap, modelo }) => {
   const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, cliente);
+  validarProposta(grupos, bdiCalc.valorVenda, bdiCalc.descontoNegociacao || 0, bdiCalc.problemas);
   const comparativos = montarComparativosProposta(
     etapas,
     bdiCalc,
@@ -884,6 +601,7 @@ const exportarPropostaXlsx = ({ projeto, cliente, etapas, bdiCalc, cpus, catalog
 
 const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap, numeroPropostaAutomatico }) => {
   const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, cliente);
+  validarProposta(grupos, bdiCalc.valorVenda, bdiCalc.descontoNegociacao || 0, bdiCalc.problemas);
   const comparativos = montarComparativosProposta(
     etapas,
     bdiCalc,
@@ -891,7 +609,7 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap,
     catalogMap,
     cliente
   );
-  const totalBruto = grupos.reduce((s, grupo) => s + grupo.total, 0);
+  const totalBruto = somarMoeda(grupos.map((grupo) => grupo.total));
   const descontoNegociacao = Math.min(
     totalBruto,
     Math.max(0, num(bdiCalc?.descontoNegociacao))
@@ -942,8 +660,8 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap,
           <td>${escapeHtml(item.numero)}</td>
           <td>${escapeHtml(item.descricao)}</td>
           <td>${escapeHtml(item.unidade)}</td>
-          <td>${fmt(item.quantidade)}</td>
-          <td>R$ ${fmt(item.unitario)}</td>
+          <td>${formatarPrecisao(item.quantidade)}</td>
+          <td>R$ ${formatarPrecisao(item.unitario)}</td>
           <td>R$ ${fmt(item.total)}</td>
           <td></td>
         </tr>
@@ -1125,108 +843,8 @@ const gerarPropostaPdf = ({ projeto, cliente, etapas, bdiCalc, cpus, catalogMap,
   printWindow.document.close();
 };
 
-const calcularPrecoVendaProjeto = (etapas, bdi, cpus, catalogMap) => {
-  const calcularFatorBdiQualquer = (t = {}) => {
-    const ac = num(t.admCentral || t.adminCentral);
-    const c = num(t.contabilidade);
-    const co = num(t.contingenciamento);
-    const cf = num(t.custoFinanceiro);
-    const l = num(t.lucro);
-    const das = num(t.dasAnexoIV || 0);
-    const art = num(t.art);
-    const pv = das + art;
-    const numerador = (1 + ac) * (1 + c) * (1 + co) * (1 + cf) * (1 + l);
-    const denominador = 1 - pv;
-    return denominador <= 0 ? 1 : numerador / denominador;
-  };
 
-  const FatorBdiGeralBase = calcularFatorBdiQualquer(bdi || BDI_PADRAO);
-  const faturamentoDireto = !!bdi?.faturamentoDireto;
-  const materiaisFaturamentoDireto = Array.isArray(bdi?.materiaisFaturamentoDireto)
-    ? bdi.materiaisFaturamentoDireto
-    : undefined;
-  const FatorBdiMateriaisBase =
-    faturamentoDireto && bdi?.materiais
-      ? calcularFatorBdiQualquer(bdi.materiais)
-      : FatorBdiGeralBase;
-  const retencaoInss = Math.min(0.99, Math.max(0, num(bdi?.retencaoInss)));
-  const FatorBdiMaoObraBase = retencaoInss > 0
-    ? FatorBdiGeralBase / (1 - retencaoInss)
-    : FatorBdiGeralBase;
-  const collemAtivo = !!bdi?.collemAtivo;
-  const collemX = num(bdi?.collemX) > 0 ? num(bdi.collemX) : 1;
-  const collemY = num(bdi?.collemY) > 0 ? num(bdi.collemY) : 1;
-  const divisorCollem = collemAtivo ? collemX * collemY : 1;
-  const FatorBdiGeral = FatorBdiGeralBase / divisorCollem;
-  const FatorBdiMateriais = FatorBdiMateriaisBase / divisorCollem;
-  const FatorBdiMaoObra = FatorBdiMaoObraBase / divisorCollem;
-
-  let totalCustoDireto = 0;
-  let custoMaoObra = 0;
-  let custoMateriaisFaturamentoDireto = 0;
-  let totalPrecoVenda = 0;
-  let totalPrecoVendaBase = 0;
-
-  (etapas || []).forEach((e) => {
-    itensAtivosDaEtapa(e).forEach((it) => {
-      const qtdCpu = num(it.quantidade);
-      (it.insumos || []).forEach((ins) => {
-        const custoInsumoTotal = num(ins.coeficiente) * qtdCpu * insumoValorUnitario(ins, cpus, catalogMap);
-        totalCustoDireto += custoInsumoTotal;
-
-        if (insumoComFaturamentoDireto(ins, { faturamentoDireto, materiaisFaturamentoDireto })) {
-          custoMateriaisFaturamentoDireto += custoInsumoTotal;
-          totalPrecoVendaBase += custoInsumoTotal * FatorBdiMateriaisBase;
-          totalPrecoVenda += custoInsumoTotal * FatorBdiMateriais;
-        } else if (insumoEhMaoDeObra(ins.tipo)) {
-          custoMaoObra += custoInsumoTotal;
-          totalPrecoVendaBase += custoInsumoTotal * FatorBdiMaoObraBase;
-          totalPrecoVenda += custoInsumoTotal * FatorBdiMaoObra;
-        } else {
-          totalPrecoVendaBase += custoInsumoTotal * FatorBdiGeralBase;
-          totalPrecoVenda += custoInsumoTotal * FatorBdiGeral;
-        }
-      });
-    });
-  });
-
-  const totalDiValor = totalPrecoVenda - totalCustoDireto;
-  const totalDiRate = totalCustoDireto > 0 ? totalDiValor / totalCustoDireto : 0;
-  const retencaoInssValorBase = custoMaoObra * (FatorBdiMaoObraBase - FatorBdiGeralBase);
-  const retencaoInssValor = retencaoInssValorBase / divisorCollem;
-  const custoBaseBdiGeral = totalCustoDireto - custoMateriaisFaturamentoDireto;
-
-  return {
-    bdiRate: FatorBdiGeralBase - 1,
-    bdiRateMateriais: FatorBdiMateriaisBase - 1,
-    bdiRateMaoObra: FatorBdiMaoObraBase - 1,
-    FatorBdi: FatorBdiGeral,
-    FatorBdiMateriais,
-    FatorBdiMaoObra,
-    FatorBdiBase: FatorBdiGeralBase,
-    FatorBdiMateriaisBase,
-    FatorBdiMaoObraBase,
-    retencaoInss,
-    custoMaoObra,
-    custoBaseBdiGeral,
-    custoMateriaisFaturamentoDireto,
-    retencaoInssValor,
-    retencaoInssValorBase,
-    faturamentoDireto,
-    materiaisFaturamentoDireto,
-    collemAtivo,
-    collemX,
-    collemY,
-    divisorCollem,
-    totalDiValor,
-    totalDiRate,
-    custoDireto: totalCustoDireto,
-    valorVendaBase: totalPrecoVendaBase,
-    valorVenda: totalPrecoVenda,
-  };
-};
-
-const calcularComparativosAlternativas = (etapas, bdi, cpus, catalogMap) =>
+const calcularComparativosAlternativas = (etapas, bdi, cpus, catalogMap, cliente = {}) =>
   (etapas || []).flatMap((etapa) =>
     gruposAlternativasDaEtapa(etapa).map((grupo) => ({
       etapaId: etapa.id,
@@ -1239,7 +857,8 @@ const calcularComparativosAlternativas = (etapas, bdi, cpus, catalogMap) =>
           etapasComOpcaoAtiva(etapas, etapa.id, grupo.id, opcao.id),
           bdi,
           cpus,
-          catalogMap
+          catalogMap,
+          cliente
         );
         return {
           ...opcao,
@@ -1985,16 +1604,16 @@ export default function App() {
   }, [etapas, cpus, catalogMap]);
 
   const bdiCalc = useMemo(() => {
-    const calculo = calcularPrecoVendaProjeto(etapas, bdi, cpus, catalogMap);
+    const calculo = calcularPrecoVendaProjeto(etapas, bdi, cpus, catalogMap, clienteAtivo);
     const descontoNegociacao = Math.min(
       calculo.valorVenda,
-      descontoNegociacaoProjeto(projetoAtivo)
+      arredondarMoeda(descontoNegociacaoProjeto(projetoAtivo))
     );
     const valorVenda = aplicarDescontoNegociacao(
       calculo.valorVenda,
       descontoNegociacao
     );
-    const totalDiValor = valorVenda - calculo.custoDireto;
+    const totalDiValor = valorVenda - calculo.custoDiretoContratado;
     return {
       ...calculo,
       valorVendaBruto: calculo.valorVenda,
@@ -2002,9 +1621,20 @@ export default function App() {
       valorVenda,
       totalDiValor,
       totalDiRate:
-        calculo.custoDireto > 0 ? totalDiValor / calculo.custoDireto : 0,
+        calculo.custoDiretoContratado > 0 ? totalDiValor / calculo.custoDiretoContratado : 0,
     };
-  }, [bdi, etapas, cpus, catalogMap, projetoAtivo]);
+  }, [bdi, etapas, cpus, catalogMap, projetoAtivo, clienteAtivo]);
+
+  const validarExportacao = () => {
+    try {
+      validarProposta(bdiCalc.grupos, bdiCalc.valorVenda, bdiCalc.descontoNegociacao, bdiCalc.problemas);
+      if (bdiCalc.avisos.length) return window.confirm(`${bdiCalc.avisos.join("\n")}\n\nConfirma que revisou esses avisos e deseja gerar a proposta?`);
+      return true;
+    } catch (erro) {
+      alert(erro.message);
+      return false;
+    }
+  };
 
   const valorCustoItem = (item, key) => {
     const quantidade = num(item.quantidade);
@@ -2035,20 +1665,16 @@ export default function App() {
   };
 
   const valorVendaItem = (item, key) => {
-    const quantidade = num(item.quantidade);
-    const unitario = (item.insumos || []).reduce((total, insumo) => {
-      const custo = num(insumo.coeficiente) * insumoValorUnitario(insumo, cpus, catalogMap);
-      return total + custo * fatorVendaInsumo(insumo, bdiCalc);
-    }, 0);
+    const { quantidade, unitario, total } = itemVendaResumo(item, bdiCalc, cpus, catalogMap);
     if (key === "estrutura") return item.servico || item.descricao || item.codigo || "";
     if (key === "unidade") return item.unidade || "";
     if (key === "quantidade") return quantidade;
     if (key === "unitario") return unitario;
-    return quantidade * unitario;
+    return total;
   };
 
   const valorVendaInsumo = (insumo, quantidadeItem, key) => {
-    const unitario = insumoValorUnitario(insumo, cpus, catalogMap) * fatorVendaInsumo(insumo, bdiCalc);
+    const unitario = valorVendaUnitarioInsumo(insumo, bdiCalc, cpus, catalogMap);
     const quantidade = num(insumo.coeficiente) * quantidadeItem;
     if (key === "estrutura") return insumo.descricao || insumo.codigo || "";
     if (key === "unidade") return insumo.unidade || "";
@@ -2070,7 +1696,7 @@ export default function App() {
 
   const comparativosAlternativas = useMemo(
     () =>
-      calcularComparativosAlternativas(etapas, bdi, cpus, catalogMap).map(
+      calcularComparativosAlternativas(etapas, bdi, cpus, catalogMap, clienteAtivo).map(
         (grupo) => ({
           ...grupo,
           opcoes: grupo.opcoes.map((opcao) => ({
@@ -2082,7 +1708,7 @@ export default function App() {
           })),
         })
       ),
-    [etapas, bdi, cpus, catalogMap, bdiCalc.descontoNegociacao]
+    [etapas, bdi, cpus, catalogMap, bdiCalc.descontoNegociacao, clienteAtivo]
   );
 
   const projetosComResumo = useMemo(
@@ -2111,7 +1737,8 @@ export default function App() {
           projeto.etapas || [],
           projeto.bdi || BDI_PADRAO,
           cpus,
-          precosProjetoMap
+          precosProjetoMap,
+          cliente
         ).valorVenda;
         const descontoNegociacao = Math.min(
           valorVendaBruto,
@@ -3253,7 +2880,7 @@ export default function App() {
           />
         )}
 {tab === "bdi" && projetoAtivo && (
-          <BdiTab bdi={bdi} setBdi={setBdi} bdiCalc={bdiCalc} grandTotal={grandTotal} />
+          <BdiTab bdi={bdi} setBdi={setBdi} bdiCalc={bdiCalc} grandTotal={bdiCalc.custoDiretoContratado} />
         )}
 
         {tab === "planilha" && projetoAtivo && (
@@ -3532,7 +3159,8 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={() =>
+                  onClick={() => {
+                    if (!validarExportacao()) return;
                     exportarPropostaXlsx({
                       projeto: projetoAtivo,
                       cliente: clienteAtivo,
@@ -3541,8 +3169,8 @@ export default function App() {
                       cpus,
                       catalogMap,
                       modelo: modeloPropostaAtivo,
-                    })
-                  }
+                    });
+                  }}
                   disabled={!modeloPropostaAtivo}
                   className="px-2 py-1 text-[11px] font-medium border border-stone-900 text-white bg-stone-900 rounded hover:bg-stone-800 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -3554,6 +3182,7 @@ export default function App() {
                     type="button"
                     onClick={async () => {
                       try {
+                        if (!validarExportacao()) return;
                         if (modeloPropostaAtivo === "collem") {
                           const { gerarPropostaCollemDocx } = await import(
                             "./propostas/collemProposal"
@@ -3611,6 +3240,7 @@ export default function App() {
 
                 <button
                   onClick={async () => {
+                    if (!validarExportacao()) return;
                     if (modeloPropostaAtivo === "collem") {
                       const { gerarPropostaCollemPdf } = await import(
                         "./propostas/collemProposal"
@@ -3725,6 +3355,23 @@ export default function App() {
             )}
 
             <div id="area-planilha-venda" className="border border-stone-200 rounded-lg overflow-hidden bg-white">
+              <div className="px-4 py-2 text-xs text-stone-600 bg-stone-50 border-b border-stone-200">
+                Quantidades e preços unitários preservam a precisão do cálculo. Cada CPU é arredondada a centavos; etapas e total somam esses valores.
+                {" Campos numéricos em branco são considerados zero."}
+                {materialPorContaCliente(clienteAtivo) && " Materiais por conta do cliente são excluídos, preservando mão de obra, equipamentos e outros serviços dentro das subcomposições."}
+              </div>
+              {bdiCalc.problemas.length > 0 && (
+                <div role="alert" className="p-3 text-xs bg-red-50 text-red-800 border-b border-red-200">
+                  <strong>Proposta bloqueada: revise os dados antes de exportar.</strong>
+                  <ul className="list-disc pl-5 mt-1">{bdiCalc.problemas.slice(0, 8).map((problema) => <li key={problema}>{problema}</li>)}</ul>
+                </div>
+              )}
+              {bdiCalc.avisos.length > 0 && (
+                <div className="p-3 text-xs bg-amber-50 text-amber-900 border-b border-amber-200">
+                  <strong>Avisos para conferência:</strong>
+                  <ul className="list-disc pl-5 mt-1">{bdiCalc.avisos.map((aviso) => <li key={aviso}>{aviso}</li>)}</ul>
+                </div>
+              )}
               <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-stone-100 border-b border-stone-200 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
                 <BotaoOrdenacao coluna="estrutura" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-6">Estrutura (Etapa / CPU / Insumo)</BotaoOrdenacao>
                 <BotaoOrdenacao coluna="unidade" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="center">Und</BotaoOrdenacao>
@@ -3744,14 +3391,9 @@ export default function App() {
                     const etapaId = etapa.id || `etapa-${idxEtapa}`;
                     const isEtapaAberta = !!etapasExpandidas[etapaId];
 
-                    let totalEtapaComBdi = 0;
-                    itensAtivosDaEtapa(etapa).forEach(it => {
-                      const qCpu = num(it.quantidade);
-                      (it.insumos || []).forEach(ins => {
-                        const cIn = num(ins.coeficiente) * qCpu * insumoValorUnitario(ins, cpus, catalogMap);
-                        totalEtapaComBdi += cIn * fatorVendaInsumo(ins, bdiCalc);
-                      });
-                    });
+                    const totalEtapaComBdi = somarMoeda(itensAtivosDaEtapa(etapa).map(
+                      (item) => itemVendaResumo(item, bdiCalc, cpus, catalogMap).total
+                    ));
 
                     return (
                       <div key={etapaId} className="bg-stone-50/30">
@@ -3774,11 +3416,8 @@ export default function App() {
                           const isCpuAberta = !!cpusExpandidas[itemId];
                           const qtdItem = num(item.quantidade);
 
-                          let totalCpuComBdi = 0;
-                          (item.insumos || []).forEach(ins => {
-                            const cIn = num(ins.coeficiente) * insumoValorUnitario(ins, cpus, catalogMap);
-                            totalCpuComBdi += cIn * fatorVendaInsumo(ins, bdiCalc);
-                          });
+                          const resumoVenda = itemVendaResumo(item, bdiCalc, cpus, catalogMap);
+                          const totalCpuComBdi = resumoVenda.unitario;
 
                           return (
                             <div key={itemId} className="border-b border-stone-100">
@@ -3791,10 +3430,10 @@ export default function App() {
                                   {numCpu}. {item.codigo ? `[${item.codigo}] ` : ""}{item.servico || item.descricao}
                                 </span>
                                 <span className="col-span-1 text-center font-mono text-stone-400">{item.unidade}</span>
-                                <span className="col-span-1.5 text-right font-mono">{qtdItem.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-                                <span className="col-span-1.5 text-right font-mono text-stone-500">R$ {fmt(totalCpuComBdi)}</span>
+                                <span className="col-span-1.5 text-right font-mono">{formatarPrecisao(qtdItem)}</span>
+                                <span className="col-span-1.5 min-w-0 break-words text-right font-mono text-stone-500">R$ {formatarPrecisao(totalCpuComBdi)}</span>
                                 <span className="col-span-2 text-right font-mono text-stone-900">
-                                  R$ {fmt(qtdItem * totalCpuComBdi)}
+                                  R$ {fmt(resumoVenda.total)}
                                 </span>
                               </div>
 
@@ -3802,9 +3441,7 @@ export default function App() {
                                 <div className="bg-stone-50/50 divide-y divide-stone-100/60 border-t border-b border-stone-100">
                                   {ordenarLista(item.insumos || [], ordenacaoPlanilhaVenda, (insumo, key) => valorVendaInsumo(insumo, qtdItem, key)).map((insumo, idxInsumo) => {
                                     const numInsumo = `${numCpu}.${idxInsumo + 1}`;
-                                    const custoUnit = insumoValorUnitario(insumo, cpus, catalogMap);
-                                    
-                                    const precoVendaInsumo = custoUnit * fatorVendaInsumo(insumo, bdiCalc);
+                                    const precoVendaInsumo = valorVendaUnitarioInsumo(insumo, bdiCalc, cpus, catalogMap);
                                     
                                     const qtdCalculada = num(insumo.coeficiente) * qtdItem;
                                     const vendaTotalInsumo = qtdCalculada * precoVendaInsumo;
@@ -7002,7 +6639,8 @@ function BdiTab({ bdi, setBdi, bdiCalc, grandTotal }) {
           <div>
             <h3 className="font-semibold text-xs uppercase tracking-wider text-stone-400 mb-4">Resumo Geral de Fechamento</h3>
             <div className="space-y-3 text-xs">
-              <div className="flex justify-between"><span className="text-stone-400">Custo Direto Base:</span><span className="font-mono">R$ {fmt(grandTotal)}</span></div>
+              <div className="flex justify-between"><span className="text-stone-400">Custo Direto Contratado:</span><span className="font-mono">R$ {fmt(grandTotal)}</span></div>
+              {materialPorContaCliente(bdiCalc.cliente) && <p className="text-xs text-stone-400">Não inclui os materiais fornecidos pelo cliente. A Planilha de Custo mantém o custo integral da composição.</p>}
               <div className="flex justify-between">
                 <span className="text-stone-400">BDI Geral Aplicado:</span>
                 <span className="font-mono text-stone-300">{fmt(bdiCalc.bdiRate * 100)}%</span>
@@ -7123,15 +6761,16 @@ function CronogramaSemanal({
   });
   const [ordenacao, setOrdenacao] = useState({ key: "numero", direction: "asc" });
 
+  const totaisLiquidosEtapas = useMemo(() => {
+    const grupos = montarItensProposta(etapas, bdiCalc, cpus, catalogMap, cliente);
+    return ratearMoeda(bdiCalc.valorVenda, grupos.map((grupo) => grupo.total));
+  }, [etapas, bdiCalc, cpus, catalogMap, cliente]);
+
   const linhas = useMemo(
     () =>
       (etapas || []).map((etapa, indice) => {
         const id = etapa.id || `etapa-${indice}`;
-        const totalVenda = itensAtivosDaEtapa(etapa).reduce(
-          (soma, item) =>
-            soma + itemVendaResumo(item, bdiCalc, cpus, catalogMap, cliente).total,
-          0
-        );
+        const totalVenda = totaisLiquidosEtapas[indice];
         const configuracao = cronograma.etapas?.[id] || {};
         const inicioPadrao = Math.min(indice + 1, semanas);
         const inicio = limitarInteiroCronograma(
@@ -7164,11 +6803,11 @@ function CronogramaSemanal({
           percentuais,
         };
       }),
-    [etapas, cronograma.etapas, semanas, bdiCalc, cpus, catalogMap, cliente]
+    [etapas, cronograma.etapas, semanas, totaisLiquidosEtapas]
   );
 
   const totalProjeto = useMemo(
-    () => linhas.reduce((soma, linha) => soma + linha.totalVenda, 0),
+    () => somarMoeda(linhas.map((linha) => linha.totalVenda)),
     [linhas]
   );
 
@@ -7194,9 +6833,7 @@ function CronogramaSemanal({
           percentuais,
           somaPercentuais,
           pesoFisico,
-          valoresSemanais: percentuais.map(
-            (percentual) => linha.totalVenda * (percentual / 100)
-          ),
+          valoresSemanais: ratearMoeda(linha.totalVenda * somaPercentuais / 100, percentuais),
           fisicoSemanal: percentuais.map(
             (percentual) => pesoFisico * (percentual / 100)
           ),
@@ -7222,10 +6859,7 @@ function CronogramaSemanal({
   const totaisSemanais = useMemo(
     () =>
       Array.from({ length: semanas }, (_, indice) =>
-        linhasCalculadas.reduce(
-          (soma, linha) => soma + linha.valoresSemanais[indice],
-          0
-        )
+        somarMoeda(linhasCalculadas.map((linha) => linha.valoresSemanais[indice]))
       ),
     [linhasCalculadas, semanas]
   );
@@ -7244,7 +6878,7 @@ function CronogramaSemanal({
   const acumuladoFinanceiro = useMemo(() => {
     let acumulado = 0;
     return totaisSemanais.map((valor) => {
-      acumulado += valor;
+      acumulado = somarMoeda([acumulado, valor]);
       return acumulado;
     });
   }, [totaisSemanais]);
@@ -7257,7 +6891,7 @@ function CronogramaSemanal({
     });
   }, [fisicoSemanal]);
 
-  const totalPlanejado = totaisSemanais.reduce((soma, valor) => soma + valor, 0);
+  const totalPlanejado = somarMoeda(totaisSemanais);
   const fisicoPlanejado = fisicoSemanal.reduce((soma, valor) => soma + valor, 0);
   const saldoPlanejado =
     Math.abs(totalProjeto - totalPlanejado) < 0.005
@@ -7617,6 +7251,7 @@ function CronogramaSemanal({
         <div className="px-5 py-3 border-r border-b lg:border-b-0 border-stone-200">
           <span className="block text-[10px] uppercase text-stone-500">Venda do orçamento</span>
           <strong className="font-mono text-sm text-stone-800">R$ {fmt(totalProjeto)}</strong>
+          {bdiCalc.descontoNegociacao > 0 && <span className="text-xs text-stone-500">Desconto negociado rateado entre as etapas; total igual à proposta.</span>}
         </div>
         <div className="px-5 py-3 border-b lg:border-b-0 lg:border-r border-stone-200">
           <span className="block text-[10px] uppercase text-stone-500">Financeiro planejado</span>

@@ -64,16 +64,17 @@ export const criarIndiceBuscaCpus = (cpusArray = []) => {
 export const insumoValorUnitario = (insumo, cpusArray = [], catMap = null, visited = new Set()) => {
   const subCpu = findSubCpu(insumo, cpusArray);
 
-  if (subCpu) {
-    if (visited.has(subCpu.id)) return 0;
-    visited.add(subCpu.id);
+  if (subCpu || Array.isArray(insumo?.subCpuInsumos)) {
+    const chave = subCpu?.id || subCpu || insumo;
+    if (visited.has(chave)) return 0;
+    visited.add(chave);
     const val = cpuValorUnit(
       insumosResolvidosSubCpu(insumo, subCpu),
       cpusArray,
       catMap,
       visited
     );
-    visited.delete(subCpu.id);
+    visited.delete(chave);
     return val;
   }
 
@@ -85,6 +86,34 @@ export const insumoValorUnitario = (insumo, cpusArray = [], catMap = null, visit
   }
 
   return num(insumo.valorUnitario);
+};
+
+// Expande somente a composição efetivamente usada, preservando o snapshot do
+// orçamento e multiplicando os coeficientes em todos os níveis. Nunca grava dados.
+export const decomporInsumo = (insumo, cpus = [], catalogMap = null, multiplicador = 1, visitadas = new Set(), problemas = []) => {
+  const coeficiente = num(insumo?.coeficiente) * multiplicador;
+  if (!Number.isFinite(coeficiente) || coeficiente < 0) {
+    problemas.push(`Coeficiente inválido: ${insumo?.descricao || "insumo sem descrição"}`);
+    return [];
+  }
+  if (coeficiente === 0) return [];
+  const subCpu = findSubCpu(insumo, cpus);
+  if (subCpu || Array.isArray(insumo?.subCpuInsumos)) {
+    const chave = subCpu?.id || subCpu || insumo;
+    if (visitadas.has(chave)) {
+      problemas.push(`Referência circular na composição: ${insumo.descricao}`);
+      return [];
+    }
+    const caminho = new Set(visitadas).add(chave);
+    const internos = insumosResolvidosSubCpu(insumo, subCpu);
+    if (internos.length === 0) problemas.push(`Subcomposição sem insumos: ${insumo.descricao}`);
+    return internos.flatMap((interno) => decomporInsumo(interno, cpus, catalogMap, coeficiente, caminho, problemas))
+      .map((folha) => ({ ...folha, chavesComposicoes: [precoKey(insumo.descricao), ...(folha.chavesComposicoes || [])] }));
+  }
+  const entrada = catalogMap?.get(precoKey(insumo.descricao));
+  const preco = entrada?.valorUnitario;
+  const valor = preco !== "" && preco !== null && preco !== undefined ? preco : insumo.valorUnitario;
+  return [{ ...insumo, coeficiente, valorUnitario: num(valor), precoAusente: valor === "" || valor === null || valor === undefined }];
 };
 
 export const cpuValorUnit = (insumos, cpusArray = [], catMap = null, visited = new Set()) => {

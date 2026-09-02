@@ -1,6 +1,6 @@
-import { findSubCpu, insumosResolvidosSubCpu, precoKey } from "./calculos";
-import { itensAtivosDaEtapa } from "./alternativas";
-import { norm, num } from "./format";
+import { findSubCpu, insumosResolvidosSubCpu, precoKey } from "./calculos.js";
+import { itensAtivosDaEtapa } from "./alternativas.js";
+import { norm, num } from "./format.js";
 
 const ehMaoDeObra = (insumo) => {
   const tipo = norm(insumo?.tipo).trim();
@@ -65,10 +65,11 @@ const coletarMaoDeObra = (
     }
 
     const subCpu = findSubCpu(insumo, cpus);
-    if (!subCpu || visitadas.has(subCpu.id)) return;
+    const chave = subCpu?.id || subCpu || insumo;
+    if ((!subCpu && !Array.isArray(insumo.subCpuInsumos)) || visitadas.has(chave)) return;
 
     const proximoCaminho = new Set(visitadas);
-    proximoCaminho.add(subCpu.id);
+    proximoCaminho.add(chave);
     coletarMaoDeObra(
       insumosResolvidosSubCpu(insumo, subCpu),
       horasOuQuantidade,

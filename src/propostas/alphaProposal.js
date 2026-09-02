@@ -18,6 +18,7 @@ import {
   WidthType,
 } from "docx";
 import alphaLogo from "../assets/alpha-engenharia-logo.png";
+import { formatarPrecisao, validarProposta } from "../utils/venda.js";
 
 const VERDE = "7B9A56";
 const VERDE_CLARO = "E2EFD9";
@@ -294,6 +295,7 @@ const criarTabelaAlternativas = (comparativos) => {
 };
 
 const criarTabelaValores = (grupos, totalGeral, descontoNegociacao = 0) => {
+  validarProposta(grupos, totalGeral, descontoNegociacao);
   const larguras = [680, 4380, 730, 870, 1130, 1130, 1570];
   const linhas = [
     new TableRow({
@@ -348,8 +350,8 @@ const criarTabelaValores = (grupos, totalGeral, descontoNegociacao = 0) => {
             celula(item.numero),
             celula(item.descricao),
             celula(item.unidade, { alignment: AlignmentType.CENTER }),
-            celula(moeda(item.quantidade), { alignment: AlignmentType.RIGHT }),
-            celula(`R$ ${moeda(item.unitario)}`, { alignment: AlignmentType.RIGHT }),
+            celula(formatarPrecisao(item.quantidade), { alignment: AlignmentType.RIGHT }),
+            celula(`R$ ${formatarPrecisao(item.unitario)}`, { alignment: AlignmentType.RIGHT }),
             celula(`R$ ${moeda(item.total)}`, { alignment: AlignmentType.RIGHT }),
             celula("", { alignment: AlignmentType.RIGHT }),
           ],
