@@ -41,6 +41,20 @@ import {
 import { proximoCodigoCpuPropria } from "./utils/cpuCodigo";
 import { alternarOrdenacao, ordenarLista } from "./utils/ordenacao";
 import { BotaoOrdenacao, CabecalhoOrdenavel } from "./components/Ordenacao";
+
+const CabecalhoColunaRedimensionavel = ({ onIniciar, children }) => (
+  <div className="relative min-w-0 h-full pr-2">
+    {children}
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Redimensionar coluna"
+      title="Arraste para ajustar a largura da coluna"
+      onPointerDown={onIniciar}
+      className="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none hover:bg-[#6f9255]/30"
+    />
+  </div>
+);
 import { criarAbaVendaModelo, XLSX_MOEDA } from "./propostas/vendaXlsx.js";
 import {
   BDI_PADRAO, materialPorContaCliente, materialFaturamentoDireto,
@@ -916,9 +930,43 @@ export default function App() {
   const [ordenacaoMateriais, setOrdenacaoMateriais] = useState({ key: "material", direction: "asc" });
   const [ordenacaoPlanilhaCusto, setOrdenacaoPlanilhaCusto] = useState({ key: "estrutura", direction: "asc" });
   const [ordenacaoPlanilhaVenda, setOrdenacaoPlanilhaVenda] = useState({ key: "estrutura", direction: "asc" });
+  const [largurasColunasProjetos, setLargurasColunasProjetos] = useState({
+    numero: 88,
+    orcamento: 220,
+    medicaoAtual: 110,
+    medicaoAcumulada: 110,
+    saldoContrato: 110,
+    custoDireto: 105,
+    valorVenda: 115,
+    atualizado: 80,
+    status: 105,
+    acoes: 108,
+  });
   const [paginaProjetos, setPaginaProjetos] = useState(1);
   const [projetoParaExcluir, setProjetoParaExcluir] = useState(null);
   const [textoConfirmacaoExclusao, setTextoConfirmacaoExclusao] = useState("");
+
+  const iniciarRedimensionamentoColunaProjeto = (chave, evento) => {
+    evento.preventDefault();
+    evento.stopPropagation();
+    const inicioX = evento.clientX;
+    const larguraInicial = largurasColunasProjetos[chave];
+    const larguraMinima = chave === "orcamento" ? 150 : chave === "numero" ? 76 : 88;
+    const aoMover = (movimento) => {
+      const novaLargura = Math.max(larguraMinima, larguraInicial + movimento.clientX - inicioX);
+      setLargurasColunasProjetos((atual) => ({ ...atual, [chave]: novaLargura }));
+    };
+    const aoSoltar = () => {
+      window.removeEventListener("pointermove", aoMover);
+      window.removeEventListener("pointerup", aoSoltar);
+    };
+    window.addEventListener("pointermove", aoMover);
+    window.addEventListener("pointerup", aoSoltar);
+  };
+
+  const estiloColunasProjetos = {
+    gridTemplateColumns: Object.values(largurasColunasProjetos).map((largura) => `${largura}px`).join(" "),
+  };
 
   dadosAtuaisRef.current = { cpus, projetos, clientes, projetoAtivoId };
 
@@ -2496,17 +2544,17 @@ export default function App() {
                 <>
                   <div className="hidden xl:block overflow-x-auto">
                     <div className="min-w-[1250px]">
-                      <div className="grid grid-cols-[88px_minmax(175px,1.4fr)_110px_110px_110px_105px_115px_80px_105px_108px] gap-3 px-5 py-3 bg-stone-50 border-b border-stone-200 text-[10px] font-semibold uppercase text-stone-500">
-                        <BotaoOrdenacao coluna="numero" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Número</BotaoOrdenacao>
-                        <BotaoOrdenacao coluna="orcamento" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Orçamento</BotaoOrdenacao>
-                        <BotaoOrdenacao coluna="medicaoAtual" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Medição atual</BotaoOrdenacao>
-                        <BotaoOrdenacao coluna="medicaoAcumulada" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Acumulado</BotaoOrdenacao>
-                        <BotaoOrdenacao coluna="saldoContrato" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="asc">Saldo contrato</BotaoOrdenacao>
-                        <BotaoOrdenacao coluna="custoDireto" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Custo direto</BotaoOrdenacao>
-                        <BotaoOrdenacao coluna="valorVenda" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Preço de venda</BotaoOrdenacao>
-                        <BotaoOrdenacao coluna="dataOrdenacao" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} direcaoInicial="desc">Atualizado</BotaoOrdenacao>
-                        <BotaoOrdenacao coluna="status" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Status</BotaoOrdenacao>
-                        <div className="text-right">Ações</div>
+                      <div className="grid gap-3 px-5 py-3 bg-stone-50 border-b border-stone-200 text-[10px] font-semibold uppercase text-stone-500" style={estiloColunasProjetos}>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("numero", e)}><BotaoOrdenacao coluna="numero" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Número</BotaoOrdenacao></CabecalhoColunaRedimensionavel>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("orcamento", e)}><BotaoOrdenacao coluna="orcamento" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Orçamento</BotaoOrdenacao></CabecalhoColunaRedimensionavel>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("medicaoAtual", e)}><BotaoOrdenacao coluna="medicaoAtual" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Medição atual</BotaoOrdenacao></CabecalhoColunaRedimensionavel>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("medicaoAcumulada", e)}><BotaoOrdenacao coluna="medicaoAcumulada" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Acumulado</BotaoOrdenacao></CabecalhoColunaRedimensionavel>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("saldoContrato", e)}><BotaoOrdenacao coluna="saldoContrato" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="asc">Saldo contrato</BotaoOrdenacao></CabecalhoColunaRedimensionavel>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("custoDireto", e)}><BotaoOrdenacao coluna="custoDireto" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Custo direto</BotaoOrdenacao></CabecalhoColunaRedimensionavel>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("valorVenda", e)}><BotaoOrdenacao coluna="valorVenda" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} align="right" direcaoInicial="desc">Preço de venda</BotaoOrdenacao></CabecalhoColunaRedimensionavel>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("atualizado", e)}><BotaoOrdenacao coluna="dataOrdenacao" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor} direcaoInicial="desc">Atualizado</BotaoOrdenacao></CabecalhoColunaRedimensionavel>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("status", e)}><BotaoOrdenacao coluna="status" ordenacao={ordenacaoProjetos} onOrdenar={ordenarProjetosPor}>Status</BotaoOrdenacao></CabecalhoColunaRedimensionavel>
+                        <CabecalhoColunaRedimensionavel onIniciar={(e) => iniciarRedimensionamentoColunaProjeto("acoes", e)}><div className="text-right">Ações</div></CabecalhoColunaRedimensionavel>
                       </div>
 
                       {projetosPaginados.map((resumo) => {
@@ -2535,13 +2583,14 @@ export default function App() {
                                 abrirProjetoDaLista(projeto, cliente);
                               }
                             }}
-                            className={`grid grid-cols-[88px_minmax(175px,1.4fr)_110px_110px_110px_105px_115px_80px_105px_108px] gap-3 px-5 py-4 border-b border-stone-200 last:border-b-0 items-center cursor-pointer outline-none transition-colors border-l-4 ${
+                            className={`grid gap-3 px-5 py-4 border-b border-stone-200 last:border-b-0 items-center cursor-pointer outline-none transition-colors border-l-4 ${
                               isSentToClient
                                 ? "border-l-amber-600 bg-yellow-300 hover:bg-yellow-200 focus:bg-yellow-200"
                                 : isActive
                                 ? "border-l-[#6f9255] bg-[#f3f7ef]"
                                 : "border-l-transparent hover:bg-stone-50 focus:bg-stone-50"
                             }`}
+                            style={estiloColunasProjetos}
                           >
                             <div className="text-xs font-mono font-semibold text-stone-700 whitespace-nowrap">
                               {cliente.numeroProposta || "Pendente"}
