@@ -55,6 +55,8 @@ const CabecalhoColunaRedimensionavel = ({ onIniciar, children }) => (
     />
   </div>
 );
+
+const INTERVALO_SALVAMENTO_AUTOMATICO = 5 * 60 * 1000;
 import { criarAbaVendaModelo, XLSX_MOEDA } from "./propostas/vendaXlsx.js";
 import {
   BDI_PADRAO, materialPorContaCliente, materialFaturamentoDireto,
@@ -911,6 +913,10 @@ export default function App() {
   const projectHashesRef = useRef({});
   const legacyPrecosRef = useRef([]);
   const dadosAtuaisRef = useRef({ cpus: [], projetos: [], clientes: [], projetoAtivoId: "" });
+  const salvarProjetoRef = useRef(null);
+  const salvamentoAutomaticoEmAndamentoRef = useRef(false);
+  const busyRef = useRef(false);
+  const [ultimoSalvamentoAutomatico, setUltimoSalvamentoAutomatico] = useState("");
   const [cpusDirty, setCpusDirty] = useState(false);
   const [clientesDirty, setClientesDirty] = useState(false);
   const [abaPendenteAposSalvarCpus, setAbaPendenteAposSalvarCpus] = useState(null);
@@ -969,6 +975,7 @@ export default function App() {
   };
 
   dadosAtuaisRef.current = { cpus, projetos, clientes, projetoAtivoId };
+  busyRef.current = busy;
 
   const setCpus = (nextCpus) => {
     setCpusDirty(true);
@@ -1184,6 +1191,29 @@ export default function App() {
       setTimeout(() => setStatus(""), 12000);
     }
   };
+
+  salvarProjetoRef.current = salvarProjeto;
+
+  useEffect(() => {
+    if (!loaded || !projetoAtivoId) return undefined;
+
+    const intervalo = window.setInterval(async () => {
+      if (busyRef.current || salvamentoAutomaticoEmAndamentoRef.current) return;
+      if (!salvarProjetoRef.current) return;
+
+      salvamentoAutomaticoEmAndamentoRef.current = true;
+      try {
+        const salvou = await salvarProjetoRef.current(projetoAtivoId);
+        if (salvou) setUltimoSalvamentoAutomatico(new Date().toISOString());
+      } catch (error) {
+        console.error("Falha no salvamento automático:", error);
+      } finally {
+        salvamentoAutomaticoEmAndamentoRef.current = false;
+      }
+    }, INTERVALO_SALVAMENTO_AUTOMATICO);
+
+    return () => window.clearInterval(intervalo);
+  }, [loaded, projetoAtivoId]);
 
   const salvarBaseGeral = async () => {
     setBusy(true);
@@ -2428,6 +2458,11 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {ultimoSalvamentoAutomatico && (
+              <span className="text-[10px] text-emerald-700" title="Último salvamento automático">
+                Auto-salvo às {new Date(ultimoSalvamentoAutomatico).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+              </span>
+            )}
             <span className="text-xs text-stone-400 min-h-4">{status}</span>
             <button
               type="button"
