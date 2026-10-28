@@ -4,7 +4,7 @@ import {
   Plus, Trash2, Pencil, X, Search, Upload, Download,
   ChevronDown, ChevronRight, Database, Calculator, Copy, Save, Percent, TrendingUp, RefreshCw,
   Tags, AlertTriangle, Check, FolderKanban, HardHat, User, LogIn, MapPin, Phone, Mail, Building2, FileText,
-  ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, BarChart3, ChevronLeft
+  ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, BarChart3, ChevronLeft, ClipboardList
 } from "lucide-react";
 import HistogramaMaoObra from "./HistogramaMaoObra";
 import { FONTES_PADRAO, TIPOS, seedCpus } from "./data/defaultData";
@@ -1997,6 +1997,15 @@ export default function App() {
     setProjetos(projetosAtualizados);
   };
 
+  const atualizarDiarioProjeto = (projectId, diarioObra) => {
+    const dadosAtuais = dadosAtuaisRef.current;
+    const projetosAtualizados = dadosAtuais.projetos.map((projeto) =>
+      projeto.id === projectId ? { ...projeto, diarioObra } : projeto
+    );
+    dadosAtuaisRef.current = { ...dadosAtuais, projetos: projetosAtualizados };
+    setProjetos(projetosAtualizados);
+  };
+
   const abrirNovoOrcamento = () => {
     if (clientes.length === 0) {
       setTab("clientes");
@@ -2373,6 +2382,9 @@ export default function App() {
                   </SideTabBtn>
                   <SideTabBtn active={tab === "cronograma"} onClick={() => abrirAbaProjeto("cronograma")} icon={<CalendarDays size={15} />}>
                     Cronograma
+                  </SideTabBtn>
+                  <SideTabBtn active={tab === "diario"} onClick={() => abrirAbaProjeto("diario")} icon={<ClipboardList size={15} />}>
+                    Diário de obra
                   </SideTabBtn>
                   <SideTabBtn active={tab === "histograma"} onClick={() => abrirAbaProjeto("histograma")} icon={<BarChart3 size={15} />}>
                     Histograma
@@ -3621,6 +3633,16 @@ export default function App() {
           />
         )}
 
+        {tab === "diario" && projetoAtivo && (
+          <DiarioObraTab
+            projeto={projetoAtivo}
+            cliente={clienteAtivo}
+            onAtualizar={(diarioObra) => atualizarDiarioProjeto(projetoAtivo.id, diarioObra)}
+            onSalvar={() => salvarProjeto(projetoAtivo.id)}
+            saving={busy}
+          />
+        )}
+
         {tab === "histograma" && projetoAtivo && (
           <HistogramaMaoObra
             projeto={projetoAtivo}
@@ -3806,6 +3828,171 @@ export default function App() {
       <footer className="border-t border-stone-200 bg-white/70 px-4 py-3 text-center text-[10px] tracking-wide text-stone-400">
         Elaborado e desenvolvido por <span className="font-semibold text-stone-500">Hemerson R. O. Moreira</span>
       </footer>
+    </div>
+  );
+}
+
+function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
+  const registros = Array.isArray(projeto?.diarioObra) ? projeto.diarioObra : [];
+  const registroVazio = () => ({
+    data: new Date().toISOString().slice(0, 10),
+    titulo: "",
+    descricao: "",
+    responsavel: "",
+    clima: "",
+  });
+  const [formulario, setFormulario] = useState(registroVazio);
+  const [editandoId, setEditandoId] = useState(null);
+
+  const atualizarCampo = (campo, valor) =>
+    setFormulario((atual) => ({ ...atual, [campo]: valor }));
+
+  const salvarRegistro = (evento) => {
+    evento.preventDefault();
+    const titulo = formulario.titulo.trim();
+    const descricao = formulario.descricao.trim();
+    if (!titulo || !descricao) return;
+
+    const registro = {
+      ...formulario,
+      id: editandoId || uid(),
+      titulo,
+      descricao,
+      responsavel: formulario.responsavel.trim(),
+      clima: formulario.clima.trim(),
+      atualizadoEm: new Date().toISOString(),
+    };
+    const proximos = editandoId
+      ? registros.map((item) => (item.id === editandoId ? registro : item))
+      : [registro, ...registros];
+    onAtualizar(proximos);
+    setFormulario(registroVazio());
+    setEditandoId(null);
+  };
+
+  const editarRegistro = (registro) => {
+    setEditandoId(registro.id);
+    setFormulario({
+      data: registro.data || "",
+      titulo: registro.titulo || "",
+      descricao: registro.descricao || "",
+      responsavel: registro.responsavel || "",
+      clima: registro.clima || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const excluirRegistro = (id) => {
+    if (!window.confirm("Excluir este registro do diário de obra?")) return;
+    onAtualizar(registros.filter((item) => item.id !== id));
+    if (editandoId === id) {
+      setEditandoId(null);
+      setFormulario(registroVazio());
+    }
+  };
+
+  const formatarData = (valor) => {
+    if (!valor) return "Data não informada";
+    const data = new Date(`${valor}T12:00:00`);
+    return Number.isNaN(data.getTime())
+      ? valor
+      : data.toLocaleDateString("pt-BR");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-stone-200 rounded-lg p-4 shadow-xs">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-stone-800 flex items-center gap-2">
+              <ClipboardList size={18} className="text-[#6f9255]" /> Diário de obra
+            </h2>
+            <p className="text-xs text-stone-500 mt-1">
+              Registre o andamento e as ocorrências do orçamento “{projeto.nome}”.
+            </p>
+          </div>
+          <span className="text-xs text-stone-400 whitespace-nowrap">
+            {registros.length} {registros.length === 1 ? "registro" : "registros"}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 mt-4 pt-4 border-t border-stone-100 text-xs">
+          <p className="text-stone-600"><strong className="text-stone-800">Empreiteira:</strong> Alpha Engenharia e Serviços Ltda</p>
+          <p className="text-stone-600"><strong className="text-stone-800">Contrato nº:</strong> {cliente?.numeroProposta || "A definir"}</p>
+          <p className="text-stone-600"><strong className="text-stone-800">Endereço:</strong> {cliente?.endereco || cliente?.local || "A informar no cadastro do cliente"}</p>
+          <p className="text-stone-600"><strong className="text-stone-800">Obra:</strong> {projeto.nome || "Orçamento sem nome"}</p>
+        </div>
+      </div>
+
+      <form onSubmit={salvarRegistro} className="bg-white border border-stone-200 rounded-lg p-4 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-stone-700">
+            {editandoId ? "Editar registro" : "Novo registro"}
+          </h3>
+          {editandoId && (
+            <button type="button" onClick={() => { setEditandoId(null); setFormulario(registroVazio()); }} className="text-xs text-stone-500 hover:text-stone-800">
+              Cancelar edição
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <label className="text-xs text-stone-600">
+            Data
+            <input type="date" value={formulario.data} onChange={(e) => atualizarCampo("data", e.target.value)} className="mt-1 w-full h-9 px-2 border border-stone-300 rounded-md text-sm" />
+          </label>
+          <label className="text-xs text-stone-600 md:col-span-3">
+            Título / etapa
+            <input value={formulario.titulo} onChange={(e) => atualizarCampo("titulo", e.target.value)} placeholder="Ex.: Concretagem da fundação" required className="mt-1 w-full h-9 px-3 border border-stone-300 rounded-md text-sm" />
+          </label>
+          <label className="text-xs text-stone-600 md:col-span-2">
+            Responsável / equipe
+            <input value={formulario.responsavel} onChange={(e) => atualizarCampo("responsavel", e.target.value)} placeholder="Ex.: Equipe de campo" className="mt-1 w-full h-9 px-3 border border-stone-300 rounded-md text-sm" />
+          </label>
+          <label className="text-xs text-stone-600 md:col-span-2">
+            Clima / condições
+            <input value={formulario.clima} onChange={(e) => atualizarCampo("clima", e.target.value)} placeholder="Ex.: Ensolarado, acesso normal" className="mt-1 w-full h-9 px-3 border border-stone-300 rounded-md text-sm" />
+          </label>
+        </div>
+        <label className="block text-xs text-stone-600">
+          Descrição da ocorrência
+          <textarea value={formulario.descricao} onChange={(e) => atualizarCampo("descricao", e.target.value)} placeholder="Descreva os serviços executados, ocorrências, materiais recebidos ou impedimentos." required rows={4} className="mt-1 w-full px-3 py-2 border border-stone-300 rounded-md text-sm resize-y" />
+        </label>
+        <div className="flex justify-end gap-2">
+          <button type="submit" className="inline-flex items-center gap-2 px-3 py-2 bg-stone-900 text-white rounded-md text-xs font-medium hover:bg-stone-800">
+            <Save size={14} /> {editandoId ? "Atualizar registro" : "Adicionar registro"}
+          </button>
+          <button type="button" onClick={onSalvar} disabled={saving} className="inline-flex items-center gap-2 px-3 py-2 border border-stone-300 text-stone-700 rounded-md text-xs font-medium hover:bg-stone-50 disabled:opacity-50">
+            <Save size={14} /> {saving ? "Salvando..." : "Salvar diário"}
+          </button>
+        </div>
+      </form>
+
+      <div className="space-y-3">
+        {registros.length === 0 ? (
+          <div className="bg-white border border-dashed border-stone-300 rounded-lg p-10 text-center text-sm text-stone-500">
+            Nenhum registro no diário deste orçamento.
+          </div>
+        ) : registros.map((registro) => (
+          <article key={registro.id} className="bg-white border border-stone-200 rounded-lg p-4 shadow-xs">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-wide text-[#6f9255] font-semibold">{formatarData(registro.data)}</p>
+                <h3 className="text-sm font-semibold text-stone-800 mt-1">{registro.titulo}</h3>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <button type="button" onClick={() => editarRegistro(registro)} title="Editar registro" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-600 hover:bg-stone-50"><Pencil size={14} /></button>
+                <button type="button" onClick={() => excluirRegistro(registro.id)} title="Excluir registro" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-500 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>
+              </div>
+            </div>
+            <p className="text-sm text-stone-700 whitespace-pre-wrap mt-3">{registro.descricao}</p>
+            {(registro.responsavel || registro.clima) && (
+              <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 pt-3 border-t border-stone-100 text-xs text-stone-500">
+                {registro.responsavel && <span><strong>Responsável:</strong> {registro.responsavel}</span>}
+                {registro.clima && <span><strong>Condições:</strong> {registro.clima}</span>}
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
