@@ -3841,7 +3841,7 @@ export default function App() {
 }
 
 function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
-  const alphaDadosRdo = { nome: "Alpha Engenharia e Serviços Ltda", documento: "" };
+  const alphaDadosRdo = { nome: "Alpha Engenharia e Serviços Ltda", documento: "52.903.822/0001-86" };
   const registros = Array.isArray(projeto?.diarioObra) ? projeto.diarioObra : [];
   const profissionaisSalvos = Array.isArray(projeto?.profissionaisObra) ? projeto.profissionaisObra : [];
   const ferramentasSalvas = (Array.isArray(projeto?.ferramentasObra) ? projeto.ferramentasObra : [])
