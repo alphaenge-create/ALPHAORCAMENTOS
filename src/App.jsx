@@ -3841,6 +3841,7 @@ export default function App() {
 }
 
 function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
+  const alphaDadosRdo = { nome: "Alpha Engenharia e Serviços Ltda", documento: "" };
   const registros = Array.isArray(projeto?.diarioObra) ? projeto.diarioObra : [];
   const profissionaisSalvos = Array.isArray(projeto?.profissionaisObra) ? projeto.profissionaisObra : [];
   const ferramentasSalvas = (Array.isArray(projeto?.ferramentasObra) ? projeto.ferramentasObra : [])
@@ -4045,7 +4046,10 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       </header>
       <div class="titulo">Identificação do contrato</div>
       <section class="dados">
-        <div class="dado"><span class="rotulo">Empreiteira</span>Alpha Engenharia e Serviços Ltda</div>
+        <div class="dado"><span class="rotulo">Contratada / empreiteira</span>${escapeHtml(alphaDadosRdo.nome)}</div>
+        <div class="dado"><span class="rotulo">CNPJ da contratada</span>${escapeHtml(alphaDadosRdo.documento || "Não informado")}</div>
+        <div class="dado"><span class="rotulo">Cliente / contratante</span>${escapeHtml(cliente?.nome || "Não informado")}</div>
+        <div class="dado"><span class="rotulo">CNPJ do cliente</span>${escapeHtml(cliente?.documento || "Não informado")}</div>
         <div class="dado"><span class="rotulo">Contrato nº</span>${escapeHtml(cliente?.numeroProposta || "A definir")}</div>
         <div class="dado"><span class="rotulo">Obra</span>${escapeHtml(projeto.nome || "Orçamento sem nome")}</div>
         <div class="dado"><span class="rotulo">Endereço</span>${escapeHtml(cliente?.endereco || cliente?.local || "A informar no cadastro do cliente")}</div>
@@ -4170,7 +4174,10 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
           </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 mt-4 pt-4 border-t border-stone-100 text-xs">
-          <p className="text-stone-600"><strong className="text-stone-800">Empreiteira:</strong> Alpha Engenharia e Serviços Ltda</p>
+          <p className="text-stone-600"><strong className="text-stone-800">Contratada:</strong> {alphaDadosRdo.nome}</p>
+          <p className="text-stone-600"><strong className="text-stone-800">CNPJ contratada:</strong> {alphaDadosRdo.documento || "Não informado"}</p>
+          <p className="text-stone-600"><strong className="text-stone-800">Cliente:</strong> {cliente?.nome || "Não informado"}</p>
+          <p className="text-stone-600"><strong className="text-stone-800">CNPJ cliente:</strong> {cliente?.documento || "Não informado"}</p>
           <p className="text-stone-600"><strong className="text-stone-800">Contrato nº:</strong> {cliente?.numeroProposta || "A definir"}</p>
           <p className="text-stone-600"><strong className="text-stone-800">Endereço:</strong> {cliente?.endereco || cliente?.local || "A informar no cadastro do cliente"}</p>
           <p className="text-stone-600"><strong className="text-stone-800">Obra:</strong> {projeto.nome || "Orçamento sem nome"}</p>
