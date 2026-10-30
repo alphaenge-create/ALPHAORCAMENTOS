@@ -1997,7 +1997,7 @@ export default function App() {
     setProjetos(projetosAtualizados);
   };
 
-  const atualizarDiarioProjeto = (projectId, diarioObra, profissionaisObra, ferramentasObra) => {
+  const atualizarDiarioProjeto = (projectId, diarioObra, profissionaisObra, ferramentasObra, funcoesExcluidasObra) => {
     const dadosAtuais = dadosAtuaisRef.current;
     const projetosAtualizados = dadosAtuais.projetos.map((projeto) =>
       projeto.id === projectId
@@ -2006,6 +2006,7 @@ export default function App() {
             diarioObra,
             ...(profissionaisObra ? { profissionaisObra } : {}),
             ...(ferramentasObra ? { ferramentasObra } : {}),
+            ...(funcoesExcluidasObra ? { funcoesExcluidasObra } : {}),
           }
         : projeto
     );
@@ -3644,7 +3645,7 @@ export default function App() {
           <DiarioObraTab
             projeto={projetoAtivo}
             cliente={clienteAtivo}
-            onAtualizar={(diarioObra, profissionaisObra, ferramentasObra) => atualizarDiarioProjeto(projetoAtivo.id, diarioObra, profissionaisObra, ferramentasObra)}
+            onAtualizar={(diarioObra, profissionaisObra, ferramentasObra, funcoesExcluidasObra) => atualizarDiarioProjeto(projetoAtivo.id, diarioObra, profissionaisObra, ferramentasObra, funcoesExcluidasObra)}
             onSalvar={() => salvarProjeto(projetoAtivo.id)}
             saving={busy}
           />
@@ -3842,8 +3843,11 @@ export default function App() {
 function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
   const registros = Array.isArray(projeto?.diarioObra) ? projeto.diarioObra : [];
   const profissionaisSalvos = Array.isArray(projeto?.profissionaisObra) ? projeto.profissionaisObra : [];
-  const ferramentasSalvas = Array.isArray(projeto?.ferramentasObra) ? projeto.ferramentasObra : [];
+  const ferramentasSalvas = (Array.isArray(projeto?.ferramentasObra) ? projeto.ferramentasObra : [])
+    .map((ferramenta) => ({ ...ferramenta, quantidade: ferramenta.quantidade || "1" }));
+  const funcoesExcluidas = Array.isArray(projeto?.funcoesExcluidasObra) ? projeto.funcoesExcluidasObra : [];
   const funcoesPadrao = ["SERVENTE", "PEDREIRO", "CARPINT.", "ARMADOR", "BOMBEIRO", "ELETRICISTA", "PINTOR", "ALMOX.", "OP. MÁQ.", "MOTO-RISTA", "VIGIA", "ENCAR.", "MESTRE", "FISCAL", "ENGº.", "APONTADOR"];
+  const funcoesDisponiveis = funcoesPadrao.filter((funcao) => !funcoesExcluidas.includes(funcao));
   const dataLocalInput = (data) => {
     const ano = data.getFullYear();
     const mes = String(data.getMonth() + 1).padStart(2, "0");
@@ -3863,7 +3867,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
   };
   const registroVazio = (registrosBase = registros) => ({
     data: proximaDataRdo(registrosBase),
-    funcionarios: funcoesPadrao.map((funcao) => ({ funcao, nomes: "", quantidade: "" })),
+    funcionarios: funcoesDisponiveis.map((funcao) => ({ funcao, nomes: "", quantidade: "" })),
     atividades: (() => {
       const data = new Date(`${proximaDataRdo(registrosBase)}T12:00:00`);
       return data.getDay() === 0 || data.getDay() === 6 ? "SEM ATIVIDADES" : "";
@@ -3874,7 +3878,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
   const [formulario, setFormulario] = useState(registroVazio);
   const [editandoId, setEditandoId] = useState(null);
   const [profissionaisSelecionados, setProfissionaisSelecionados] = useState([]);
-  const [novoProfissional, setNovoProfissional] = useState({ nome: "", funcao: funcoesPadrao[0] });
+  const [novoProfissional, setNovoProfissional] = useState({ nome: "", funcao: funcoesDisponiveis[0] || "" });
   const [ferramentasSelecionadas, setFerramentasSelecionadas] = useState([]);
   const [novaFerramenta, setNovaFerramenta] = useState("");
 
@@ -3886,7 +3890,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     const atividades = formulario.atividades.trim();
     if (!atividades) return;
     const funcionarios = (profissionaisSelecionados.length > 0
-      ? funcoesPadrao.map((funcao) => {
+      ? funcoesDisponiveis.map((funcao) => {
           const presentes = profissionaisSalvos.filter(
             (profissional) => profissionaisSelecionados.includes(profissional.id) && profissional.funcao === funcao
           );
@@ -3910,6 +3914,9 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       funcionarios,
       profissionaisIds: profissionaisSelecionados,
       ferramentasIds: ferramentasSelecionadas,
+      ferramentas: ferramentasSalvas
+        .filter((ferramenta) => ferramentasSelecionadas.includes(ferramenta.id))
+        .map((ferramenta) => ({ id: ferramenta.id, nome: ferramenta.nome, quantidade: ferramenta.quantidade || "1" })),
       atividades,
       ocorrencias: formulario.ocorrencias.trim(),
       descricao: atividades,
@@ -3988,9 +3995,10 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
           <td class="center">${escapeHtml(item.quantidade || "0")}</td>
         </tr>`)
       .join("");
-    const ferramentasPresentes = ferramentasSalvas
-      .filter((ferramenta) => (registro.ferramentasIds || []).includes(ferramenta.id))
-      .map((ferramenta) => `<li>${escapeHtml(ferramenta.nome)}</li>`)
+    const ferramentasPresentes = (Array.isArray(registro.ferramentas) && registro.ferramentas.length > 0
+      ? registro.ferramentas
+      : ferramentasSalvas.filter((ferramenta) => (registro.ferramentasIds || []).includes(ferramenta.id)))
+      .map((ferramenta) => `<li>${escapeHtml(ferramenta.nome)} (Qtd.: ${escapeHtml(ferramenta.quantidade || "1")})</li>`)
       .join("");
     const imprimir = window.open("", "_blank", "width=1000,height=800");
     if (!imprimir) return;
@@ -4065,7 +4073,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     const profissional = { id: uid(), nome, funcao };
     const proximosProfissionais = [...profissionaisSalvos, profissional];
     onAtualizar(registros, proximosProfissionais);
-    setNovoProfissional({ nome: "", funcao: funcoesPadrao[0] });
+    setNovoProfissional({ nome: "", funcao: funcoesDisponiveis[0] || "" });
     setProfissionaisSelecionados((atual) => [...atual, profissional.id]);
   };
 
@@ -4089,6 +4097,41 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     setFerramentasSelecionadas((atual) =>
       atual.includes(id) ? atual.filter((item) => item !== id) : [...atual, id]
     );
+
+  const atualizarQuantidadeFerramenta = (id, quantidade) => {
+    const valor = String(Math.max(0, Number(quantidade) || 0));
+    const proximasFerramentas = ferramentasSalvas.map((ferramenta) =>
+      ferramenta.id === id ? { ...ferramenta, quantidade: valor } : ferramenta
+    );
+    onAtualizar(registros, undefined, proximasFerramentas);
+  };
+
+  const excluirFerramenta = (id) => {
+    const ferramenta = ferramentasSalvas.find((item) => item.id === id);
+    if (!ferramenta || !window.confirm(`Excluir a ferramenta "${ferramenta.nome}" deste orçamento?`)) return;
+    onAtualizar(registros, undefined, ferramentasSalvas.filter((item) => item.id !== id));
+    setFerramentasSelecionadas((atual) => atual.filter((item) => item !== id));
+  };
+
+  const excluirProfissional = (id) => {
+    const profissional = profissionaisSalvos.find((item) => item.id === id);
+    if (!profissional || !window.confirm(`Excluir o profissional "${profissional.nome}" deste orçamento?`)) return;
+    onAtualizar(registros, profissionaisSalvos.filter((item) => item.id !== id));
+    setProfissionaisSelecionados((atual) => atual.filter((item) => item !== id));
+  };
+
+  const excluirFuncao = (funcao) => {
+    const vinculados = profissionaisSalvos.filter((profissional) => profissional.funcao === funcao);
+    const aviso = vinculados.length > 0
+      ? `A função ${funcao} possui ${vinculados.length} profissional(is) cadastrado(s). Excluir a função e esses profissionais?`
+      : `Excluir a função ${funcao} deste orçamento?`;
+    if (!window.confirm(aviso)) return;
+    const proximasFuncoesExcluidas = [...new Set([...funcoesExcluidas, funcao])];
+    const proximosProfissionais = profissionaisSalvos.filter((profissional) => profissional.funcao !== funcao);
+    onAtualizar(registros, proximosProfissionais, undefined, proximasFuncoesExcluidas);
+    setProfissionaisSelecionados((atual) => atual.filter((id) => !vinculados.some((profissional) => profissional.id === id)));
+    setNovoProfissional((atual) => ({ ...atual, funcao: funcoesDisponiveis.filter((item) => item !== funcao)[0] || "" }));
+  };
 
   const quadroFuncionarios = profissionaisSelecionados.length > 0
     ? funcoesPadrao.map((funcao) => {
@@ -4172,7 +4215,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
                 className="h-8 sm:w-40 px-2 border border-stone-300 rounded-md text-xs bg-white"
                 aria-label="Função do profissional"
               >
-                {funcoesPadrao.map((funcao) => <option key={funcao} value={funcao}>{funcao}</option>)}
+                {funcoesDisponiveis.map((funcao) => <option key={funcao} value={funcao}>{funcao}</option>)}
               </select>
               <button type="button" onClick={cadastrarProfissional} className="h-8 inline-flex items-center justify-center gap-1 px-3 bg-[#6f9255] text-white rounded-md text-xs font-medium hover:bg-[#5f7f49]">
                 <Plus size={13} /> Cadastrar
@@ -4193,10 +4236,22 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
                     />
                     <span className="truncate">{profissional.nome}</span>
                     <span className="ml-auto text-[10px] text-stone-400">{profissional.funcao}</span>
+                    <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); excluirProfissional(profissional.id); }} title="Excluir profissional" className="text-stone-400 hover:text-red-600"><Trash2 size={12} /></button>
                   </label>
                 ))}
               </div>
             )}
+            <div className="mt-3 pt-2 border-t border-stone-200">
+              <p className="text-[11px] text-stone-500 mb-1">Funções disponíveis:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {funcoesDisponiveis.map((funcao) => (
+                  <span key={funcao} className="inline-flex items-center gap-1 rounded border border-stone-200 bg-white px-2 py-1 text-[10px] text-stone-600">
+                    {funcao}
+                    <button type="button" onClick={() => excluirFuncao(funcao)} title={`Excluir função ${funcao}`} className="text-stone-400 hover:text-red-600"><Trash2 size={11} /></button>
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="mb-3 rounded-md border border-stone-200 bg-stone-50 p-3">
             <h5 className="text-xs font-semibold text-stone-700">Cadastro de ferramentas</h5>
@@ -4226,6 +4281,17 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
                       className="accent-[#6f9255]"
                     />
                     <span className="truncate">{ferramenta.nome}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={ferramenta.quantidade || "1"}
+                      onChange={(e) => atualizarQuantidadeFerramenta(ferramenta.id, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="ml-auto w-14 h-6 px-1 border border-stone-300 rounded text-[10px] text-center"
+                      aria-label={`Quantidade disponível de ${ferramenta.nome}`}
+                    />
+                    <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); excluirFerramenta(ferramenta.id); }} title="Excluir ferramenta" className="text-stone-400 hover:text-red-600"><Trash2 size={12} /></button>
                   </label>
                 ))}
               </div>
@@ -4303,7 +4369,10 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
               <div className="mt-3 pt-3 border-t border-stone-100">
                 <p className="text-[10px] uppercase tracking-wide text-stone-400 font-semibold mb-2">Ferramentas utilizadas</p>
                 <p className="text-xs text-stone-600">
-                  {ferramentasSalvas.filter((ferramenta) => registro.ferramentasIds.includes(ferramenta.id)).map((ferramenta) => ferramenta.nome).join(", ") || "Nenhuma ferramenta informada"}
+                  {(Array.isArray(registro.ferramentas) && registro.ferramentas.length > 0
+                    ? registro.ferramentas
+                    : ferramentasSalvas.filter((ferramenta) => registro.ferramentasIds.includes(ferramenta.id)))
+                    .map((ferramenta) => `${ferramenta.nome} (Qtd.: ${ferramenta.quantidade || "1"})`).join(", ") || "Nenhuma ferramenta informada"}
                 </p>
               </div>
             )}
