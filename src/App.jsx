@@ -4037,7 +4037,6 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
         .texto { border: 1px solid #cfcfcf; border-top: 0; min-height: 70px; padding: 8px; white-space: pre-wrap; }
         .assinaturas { display: grid; grid-template-columns: 1fr 1fr; gap: 42px; margin-top: 48px; }
         .assinatura { border-top: 1px solid #555; padding-top: 5px; text-align: center; font-size: 8pt; }
-        .rodape { margin-top: 18px; padding-top: 7px; border-top: 1px solid #d8d8d8; color: #777; font-size: 8pt; text-align: center; }
       </style></head><body>
       <header class="topo">
         <img class="logo" src="${escapeHtml(alphaLogo)}" alt="Alpha Engenharia">
@@ -4058,7 +4057,6 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       <div class="bloco"><h2>Atividades executadas</h2><div class="texto">${escapeHtml(registro.atividades || registro.descricao || "Não informado").replace(/\n/g, "<br>")}</div></div>
       <div class="bloco"><h2>Ocorrências</h2><div class="texto">${escapeHtml(registro.ocorrencias || "Nenhuma ocorrência registrada.").replace(/\n/g, "<br>")}</div></div>
       <div class="assinaturas"><div class="assinatura">Responsável pela execução</div><div class="assinatura">Responsável pelo acompanhamento</div></div>
-      <div class="rodape">Elaborado e desenvolvido por Hemerson R. O. Moreira · Alpha Engenharia</div>
       </body></html>`);
     imprimir.document.close();
     imprimir.focus();
