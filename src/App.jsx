@@ -3970,6 +3970,14 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       : data.toLocaleDateString("pt-BR");
   };
 
+  const formatarDataComDiaSemana = (valor) => {
+    if (!valor) return "Data não informada";
+    const data = new Date(`${valor}T12:00:00`);
+    if (Number.isNaN(data.getTime())) return valor;
+    const dias = ["Domingo", "Segunda feira", "Terça feira", "Quarta feira", "Quinta feira", "Sexta feira", "Sábado"];
+    return `${formatarData(valor)} - ${dias[data.getDay()]}`;
+  };
+
   const exportarRegistro = (registro) => {
     const linhasFuncionarios = (registro.funcionarios || [])
       .filter((item) => item.nomes || item.quantidade)
@@ -4017,7 +4025,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       <header class="topo">
         <img class="logo" src="${escapeHtml(alphaLogo)}" alt="Alpha Engenharia">
         <div class="marca"><h1>ALPHA ENGENHARIA</h1><p>Ordem de serviço e acompanhamento de obra</p></div>
-        <div class="documento">RELATÓRIO DIÁRIO DE OBRA<small>RDO · ${escapeHtml(formatarData(registro.data))}</small></div>
+        <div class="documento">RELATÓRIO DIÁRIO DE OBRA<small>RDO · ${escapeHtml(formatarDataComDiaSemana(registro.data))}</small></div>
       </header>
       <div class="titulo">Identificação do contrato</div>
       <section class="dados">
@@ -4025,7 +4033,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
         <div class="dado"><span class="rotulo">Contrato nº</span>${escapeHtml(cliente?.numeroProposta || "A definir")}</div>
         <div class="dado"><span class="rotulo">Obra</span>${escapeHtml(projeto.nome || "Orçamento sem nome")}</div>
         <div class="dado"><span class="rotulo">Endereço</span>${escapeHtml(cliente?.endereco || cliente?.local || "A informar no cadastro do cliente")}</div>
-        <div class="dado"><span class="rotulo">Data</span>${escapeHtml(formatarData(registro.data))}</div>
+        <div class="dado"><span class="rotulo">Data</span>${escapeHtml(formatarDataComDiaSemana(registro.data))}</div>
         <div class="dado"><span class="rotulo">Clima / condições</span>${escapeHtml(registro.clima || "Não informado")}</div>
       </section>
       <div class="bloco"><h2>Mão de obra presente</h2><table><thead><tr><th>Função</th><th>Profissionais</th><th class="center">Qtd.</th></tr></thead><tbody>${linhasFuncionarios || '<tr><td colspan="3">Nenhum profissional informado.</td></tr>'}</tbody></table></div>
@@ -4134,6 +4142,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
           <label className="text-xs text-stone-600">
             Data
             <input type="date" value={formulario.data} onChange={(e) => atualizarCampo("data", e.target.value)} className="mt-1 w-full h-9 px-2 border border-stone-300 rounded-md text-sm" />
+            <span className="block mt-1 text-[11px] text-[#6f9255] font-medium">{formatarDataComDiaSemana(formulario.data)}</span>
           </label>
           <label className="text-xs text-stone-600">
             Clima / condições
@@ -4259,7 +4268,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
           <article key={registro.id} className="bg-white border border-stone-200 rounded-lg p-4 shadow-xs">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[11px] uppercase tracking-wide text-[#6f9255] font-semibold">{formatarData(registro.data)}</p>
+            <p className="text-[11px] uppercase tracking-wide text-[#6f9255] font-semibold">{formatarDataComDiaSemana(registro.data)}</p>
                 <h3 className="text-sm font-semibold text-stone-800 mt-1">Registro de obra</h3>
               </div>
               <div className="flex gap-1 shrink-0">
