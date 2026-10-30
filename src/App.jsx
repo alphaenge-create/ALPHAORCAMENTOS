@@ -3937,6 +3937,71 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       : data.toLocaleDateString("pt-BR");
   };
 
+  const exportarRegistro = (registro) => {
+    const linhasFuncionarios = (registro.funcionarios || [])
+      .filter((item) => item.nomes || item.quantidade)
+      .map((item) => `
+        <tr>
+          <td>${escapeHtml(item.funcao)}</td>
+          <td>${escapeHtml(item.nomes || "—")}</td>
+          <td class="center">${escapeHtml(item.quantidade || "0")}</td>
+        </tr>`)
+      .join("");
+    const imprimir = window.open("", "_blank", "width=1000,height=800");
+    if (!imprimir) return;
+    imprimir.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>RDO - ${escapeHtml(projeto.nome)}</title>
+      <style>
+        @page { size: A4; margin: 14mm 12mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: #111; font-family: Arial, sans-serif; font-size: 10pt; }
+        .topo { border-bottom: 3px solid #7b9a56; padding-bottom: 8px; display: flex; align-items: center; gap: 14px; }
+        .logo { width: 72px; height: 58px; object-fit: contain; }
+        .marca { flex: 1; }
+        .marca h1 { margin: 0; color: #263b1c; font-size: 18pt; letter-spacing: .5px; }
+        .marca p { margin: 3px 0 0; color: #5d6d58; font-size: 9pt; }
+        .documento { text-align: right; font-weight: bold; color: #263b1c; font-size: 12pt; }
+        .documento small { display: block; color: #666; font-size: 8pt; font-weight: normal; margin-top: 4px; }
+        .titulo { margin: 16px 0 8px; padding: 7px 10px; background: #e2efd9; border-left: 5px solid #7b9a56; font-size: 12pt; font-weight: bold; color: #263b1c; }
+        .dados { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #b7b7b7; }
+        .dado { padding: 7px 8px; border-right: 1px solid #d0d0d0; border-bottom: 1px solid #d0d0d0; min-height: 31px; }
+        .dado:nth-child(even) { border-right: 0; }
+        .rotulo { display: block; color: #666; font-size: 8pt; text-transform: uppercase; margin-bottom: 2px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #7b9a56; color: #fff; text-align: left; font-size: 8.5pt; padding: 6px; }
+        td { border: 1px solid #cfcfcf; padding: 6px; vertical-align: top; }
+        .center { text-align: center; width: 65px; }
+        .bloco { margin-top: 14px; }
+        .bloco h2 { background: #f1f4ee; border-bottom: 1px solid #7b9a56; margin: 0; padding: 6px 8px; font-size: 10pt; color: #263b1c; }
+        .texto { border: 1px solid #cfcfcf; border-top: 0; min-height: 70px; padding: 8px; white-space: pre-wrap; }
+        .assinaturas { display: grid; grid-template-columns: 1fr 1fr; gap: 42px; margin-top: 48px; }
+        .assinatura { border-top: 1px solid #555; padding-top: 5px; text-align: center; font-size: 8pt; }
+        .rodape { margin-top: 18px; padding-top: 7px; border-top: 1px solid #d8d8d8; color: #777; font-size: 8pt; text-align: center; }
+      </style></head><body>
+      <header class="topo">
+        <img class="logo" src="${escapeHtml(alphaLogo)}" alt="Alpha Engenharia">
+        <div class="marca"><h1>ALPHA ENGENHARIA</h1><p>Ordem de serviço e acompanhamento de obra</p></div>
+        <div class="documento">RELATÓRIO DIÁRIO DE OBRA<small>RDO · ${escapeHtml(formatarData(registro.data))}</small></div>
+      </header>
+      <div class="titulo">Identificação do contrato</div>
+      <section class="dados">
+        <div class="dado"><span class="rotulo">Empreiteira</span>Alpha Engenharia e Serviços Ltda</div>
+        <div class="dado"><span class="rotulo">Contrato nº</span>${escapeHtml(cliente?.numeroProposta || "A definir")}</div>
+        <div class="dado"><span class="rotulo">Obra</span>${escapeHtml(projeto.nome || "Orçamento sem nome")}</div>
+        <div class="dado"><span class="rotulo">Endereço</span>${escapeHtml(cliente?.endereco || cliente?.local || "A informar no cadastro do cliente")}</div>
+        <div class="dado"><span class="rotulo">Data</span>${escapeHtml(formatarData(registro.data))}</div>
+        <div class="dado"><span class="rotulo">Clima / condições</span>${escapeHtml(registro.clima || "Não informado")}</div>
+      </section>
+      <div class="bloco"><h2>Mão de obra presente</h2><table><thead><tr><th>Função</th><th>Profissionais</th><th class="center">Qtd.</th></tr></thead><tbody>${linhasFuncionarios || '<tr><td colspan="3">Nenhum profissional informado.</td></tr>'}</tbody></table></div>
+      <div class="bloco"><h2>Atividades executadas</h2><div class="texto">${escapeHtml(registro.atividades || registro.descricao || "Não informado").replace(/\n/g, "<br>")}</div></div>
+      <div class="bloco"><h2>Ocorrências</h2><div class="texto">${escapeHtml(registro.ocorrencias || "Nenhuma ocorrência registrada.").replace(/\n/g, "<br>")}</div></div>
+      <div class="assinaturas"><div class="assinatura">Responsável pela execução</div><div class="assinatura">Responsável pelo acompanhamento</div></div>
+      <div class="rodape">Elaborado e desenvolvido por Hemerson R. O. Moreira · Alpha Engenharia</div>
+      </body></html>`);
+    imprimir.document.close();
+    imprimir.focus();
+    setTimeout(() => imprimir.print(), 300);
+  };
+
   const atualizarFuncionario = (indice, campo, valor) => {
     setFormulario((atual) => ({
       ...atual,
@@ -4111,6 +4176,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
                 <h3 className="text-sm font-semibold text-stone-800 mt-1">Registro de obra</h3>
               </div>
               <div className="flex gap-1 shrink-0">
+                <button type="button" onClick={() => exportarRegistro(registro)} title="Exportar RDO em PDF" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-600 hover:bg-stone-50"><Download size={14} /></button>
                 <button type="button" onClick={() => editarRegistro(registro)} title="Editar registro" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-600 hover:bg-stone-50"><Pencil size={14} /></button>
                 <button type="button" onClick={() => excluirRegistro(registro.id)} title="Excluir registro" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-500 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>
               </div>
