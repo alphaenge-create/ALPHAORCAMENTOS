@@ -3844,10 +3844,30 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
   const profissionaisSalvos = Array.isArray(projeto?.profissionaisObra) ? projeto.profissionaisObra : [];
   const ferramentasSalvas = Array.isArray(projeto?.ferramentasObra) ? projeto.ferramentasObra : [];
   const funcoesPadrao = ["SERVENTE", "PEDREIRO", "CARPINT.", "ARMADOR", "BOMBEIRO", "ELETRICISTA", "PINTOR", "ALMOX.", "OP. MÁQ.", "MOTO-RISTA", "VIGIA", "ENCAR.", "MESTRE", "FISCAL", "ENGº.", "APONTADOR"];
-  const registroVazio = () => ({
-    data: new Date().toISOString().slice(0, 10),
+  const dataLocalInput = (data) => {
+    const ano = data.getFullYear();
+    const mes = String(data.getMonth() + 1).padStart(2, "0");
+    const dia = String(data.getDate()).padStart(2, "0");
+    return `${ano}-${mes}-${dia}`;
+  };
+  const proximaDataRdo = (registrosBase = registros) => {
+    const datasValidas = registrosBase
+      .map((registro) => registro?.data)
+      .filter((data) => /^\d{4}-\d{2}-\d{2}$/.test(String(data || "")))
+      .sort();
+    if (datasValidas.length === 0) return dataLocalInput(new Date());
+    const [ano, mes, dia] = datasValidas[datasValidas.length - 1].split("-").map(Number);
+    const proxima = new Date(ano, mes - 1, dia, 12, 0, 0);
+    proxima.setDate(proxima.getDate() + 1);
+    return dataLocalInput(proxima);
+  };
+  const registroVazio = (registrosBase = registros) => ({
+    data: proximaDataRdo(registrosBase),
     funcionarios: funcoesPadrao.map((funcao) => ({ funcao, nomes: "", quantidade: "" })),
-    atividades: "",
+    atividades: (() => {
+      const data = new Date(`${proximaDataRdo(registrosBase)}T12:00:00`);
+      return data.getDay() === 0 || data.getDay() === 6 ? "SEM ATIVIDADES" : "";
+    })(),
     ocorrencias: "",
     clima: "",
   });
@@ -3902,7 +3922,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       ? registros.map((item) => (item.id === editandoId ? registro : item))
       : [registro, ...registros];
     onAtualizar(proximos);
-    setFormulario(registroVazio());
+    setFormulario(registroVazio(proximos));
     setEditandoId(null);
     setProfissionaisSelecionados([]);
     setFerramentasSelecionadas([]);
