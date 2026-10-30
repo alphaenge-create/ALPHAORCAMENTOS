@@ -3834,11 +3834,12 @@ export default function App() {
 
 function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
   const registros = Array.isArray(projeto?.diarioObra) ? projeto.diarioObra : [];
+  const funcoesPadrao = ["SERVENTE", "PEDREIRO", "CARPINT.", "ARMADOR", "BOMBEIRO", "ELETRICISTA", "PINTOR", "ALMOX.", "OP. MÁQ.", "MOTO-RISTA", "VIGIA", "ENCAR.", "MESTRE", "FISCAL", "ENGº.", "APONTADOR"];
   const registroVazio = () => ({
     data: new Date().toISOString().slice(0, 10),
-    titulo: "",
-    descricao: "",
-    responsavel: "",
+    funcionarios: funcoesPadrao.map((funcao) => ({ funcao, nomes: "", quantidade: "" })),
+    atividades: "",
+    ocorrencias: "",
     clima: "",
   });
   const [formulario, setFormulario] = useState(registroVazio);
@@ -3849,16 +3850,25 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
 
   const salvarRegistro = (evento) => {
     evento.preventDefault();
-    const titulo = formulario.titulo.trim();
-    const descricao = formulario.descricao.trim();
-    if (!titulo || !descricao) return;
+    const atividades = formulario.atividades.trim();
+    if (!atividades) return;
+    const funcionarios = (formulario.funcionarios || [])
+      .map((item) => ({
+        funcao: String(item.funcao || "").trim(),
+        nomes: String(item.nomes || "").trim(),
+        quantidade: String(item.quantidade ?? "").trim(),
+      }))
+      .filter((item) => item.funcao || item.nomes || item.quantidade);
 
     const registro = {
       ...formulario,
       id: editandoId || uid(),
-      titulo,
-      descricao,
-      responsavel: formulario.responsavel.trim(),
+      funcionarios,
+      atividades,
+      ocorrencias: formulario.ocorrencias.trim(),
+      descricao: atividades,
+      titulo: "",
+      responsavel: "",
       clima: formulario.clima.trim(),
       atualizadoEm: new Date().toISOString(),
     };
@@ -3874,9 +3884,16 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     setEditandoId(registro.id);
     setFormulario({
       data: registro.data || "",
-      titulo: registro.titulo || "",
-      descricao: registro.descricao || "",
-      responsavel: registro.responsavel || "",
+      funcionarios: funcoesPadrao.map((funcao) => {
+        const existente = (registro.funcionarios || []).find(
+          (item) => String(item.funcao || "").toUpperCase() === funcao
+        );
+        return existente
+          ? { funcao, nomes: existente.nomes || "", quantidade: existente.quantidade ?? "" }
+          : { funcao, nomes: "", quantidade: "" };
+      }),
+      atividades: registro.atividades || registro.descricao || "",
+      ocorrencias: registro.ocorrencias || "",
       clima: registro.clima || "",
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -3897,6 +3914,15 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     return Number.isNaN(data.getTime())
       ? valor
       : data.toLocaleDateString("pt-BR");
+  };
+
+  const atualizarFuncionario = (indice, campo, valor) => {
+    setFormulario((atual) => ({
+      ...atual,
+      funcionarios: (atual.funcionarios || []).map((item, itemIndice) =>
+        itemIndice === indice ? { ...item, [campo]: valor } : item
+      ),
+    }));
   };
 
   return (
@@ -3934,27 +3960,40 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-xs text-stone-600">
             Data
             <input type="date" value={formulario.data} onChange={(e) => atualizarCampo("data", e.target.value)} className="mt-1 w-full h-9 px-2 border border-stone-300 rounded-md text-sm" />
           </label>
-          <label className="text-xs text-stone-600 md:col-span-3">
-            Título / etapa
-            <input value={formulario.titulo} onChange={(e) => atualizarCampo("titulo", e.target.value)} placeholder="Ex.: Concretagem da fundação" required className="mt-1 w-full h-9 px-3 border border-stone-300 rounded-md text-sm" />
-          </label>
-          <label className="text-xs text-stone-600 md:col-span-2">
-            Responsável / equipe
-            <input value={formulario.responsavel} onChange={(e) => atualizarCampo("responsavel", e.target.value)} placeholder="Ex.: Equipe de campo" className="mt-1 w-full h-9 px-3 border border-stone-300 rounded-md text-sm" />
-          </label>
-          <label className="text-xs text-stone-600 md:col-span-2">
+          <label className="text-xs text-stone-600">
             Clima / condições
             <input value={formulario.clima} onChange={(e) => atualizarCampo("clima", e.target.value)} placeholder="Ex.: Ensolarado, acesso normal" className="mt-1 w-full h-9 px-3 border border-stone-300 rounded-md text-sm" />
           </label>
         </div>
+        <div className="border-t border-stone-100 pt-3">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-600">Mão de obra presente</h4>
+              <p className="text-[11px] text-stone-400 mt-0.5">Preencha a quantidade e os nomes em cada célula do quadro.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 border border-stone-300">
+            {(formulario.funcionarios || []).map((funcionario, indice) => (
+              <div key={`funcionario-${indice}`} className="min-h-[104px] p-2 border-r border-b border-stone-300 bg-stone-50/40">
+                <p className="text-[10px] font-semibold text-stone-700 underline decoration-stone-400 underline-offset-2 truncate">{funcionario.funcao}</p>
+                <input type="number" min="0" step="1" value={funcionario.quantidade} onChange={(e) => atualizarFuncionario(indice, "quantidade", e.target.value)} placeholder="Qtd." aria-label={`Quantidade de ${funcionario.funcao}`} className="mt-2 w-full h-7 px-1.5 border border-stone-300 rounded text-xs font-mono" />
+                <input value={funcionario.nomes} onChange={(e) => atualizarFuncionario(indice, "nomes", e.target.value)} placeholder="Nome(s)" aria-label={`Nome dos ${funcionario.funcao}`} className="mt-1 w-full h-7 px-1.5 border border-stone-300 rounded text-[11px]" />
+              </div>
+            ))}
+          </div>
+        </div>
         <label className="block text-xs text-stone-600">
-          Descrição da ocorrência
-          <textarea value={formulario.descricao} onChange={(e) => atualizarCampo("descricao", e.target.value)} placeholder="Descreva os serviços executados, ocorrências, materiais recebidos ou impedimentos." required rows={4} className="mt-1 w-full px-3 py-2 border border-stone-300 rounded-md text-sm resize-y" />
+          Atividades executadas
+          <textarea value={formulario.atividades} onChange={(e) => atualizarCampo("atividades", e.target.value)} placeholder="Descreva os serviços executados e materiais recebidos." required rows={3} className="mt-1 w-full px-3 py-2 border border-stone-300 rounded-md text-sm resize-y" />
+        </label>
+        <label className="block text-xs text-stone-600">
+          Ocorrências
+          <textarea value={formulario.ocorrencias} onChange={(e) => atualizarCampo("ocorrencias", e.target.value)} placeholder="Registre impedimentos, atrasos, visitas, acidentes ou outras ocorrências." rows={3} className="mt-1 w-full px-3 py-2 border border-stone-300 rounded-md text-sm resize-y" />
         </label>
         <div className="flex justify-end gap-2">
           <button type="submit" className="inline-flex items-center gap-2 px-3 py-2 bg-stone-900 text-white rounded-md text-xs font-medium hover:bg-stone-800">
@@ -3976,17 +4015,37 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] uppercase tracking-wide text-[#6f9255] font-semibold">{formatarData(registro.data)}</p>
-                <h3 className="text-sm font-semibold text-stone-800 mt-1">{registro.titulo}</h3>
+                <h3 className="text-sm font-semibold text-stone-800 mt-1">Registro de obra</h3>
               </div>
               <div className="flex gap-1 shrink-0">
                 <button type="button" onClick={() => editarRegistro(registro)} title="Editar registro" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-600 hover:bg-stone-50"><Pencil size={14} /></button>
                 <button type="button" onClick={() => excluirRegistro(registro.id)} title="Excluir registro" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-500 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>
               </div>
             </div>
-            <p className="text-sm text-stone-700 whitespace-pre-wrap mt-3">{registro.descricao}</p>
-            {(registro.responsavel || registro.clima) && (
+            {registro.atividades || registro.descricao ? (
+              <div className="mt-3">
+                <p className="text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Atividades executadas</p>
+                <p className="text-sm text-stone-700 whitespace-pre-wrap mt-1">{registro.atividades || registro.descricao}</p>
+              </div>
+            ) : null}
+            {registro.ocorrencias && (
+              <div className="mt-3">
+                <p className="text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Ocorrências</p>
+                <p className="text-sm text-stone-700 whitespace-pre-wrap mt-1">{registro.ocorrencias}</p>
+              </div>
+            )}
+            {Array.isArray(registro.funcionarios) && registro.funcionarios.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-stone-100">
+                <p className="text-[10px] uppercase tracking-wide text-stone-400 font-semibold mb-2">Mão de obra presente</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-xs text-stone-600">
+                  {registro.funcionarios.map((funcionario, indice) => (
+                    <p key={`${registro.id}-funcionario-${indice}`}><strong>{funcionario.funcao || "Função não informada"}:</strong> {funcionario.nomes || "Nome não informado"} ({funcionario.quantidade || 0})</p>
+                  ))}
+                </div>
+              </div>
+            )}
+            {registro.clima && (
               <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 pt-3 border-t border-stone-100 text-xs text-stone-500">
-                {registro.responsavel && <span><strong>Responsável:</strong> {registro.responsavel}</span>}
                 {registro.clima && <span><strong>Condições:</strong> {registro.clima}</span>}
               </div>
             )}
