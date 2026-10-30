@@ -3875,6 +3875,14 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     ocorrencias: "",
     clima: "",
   });
+  const nomeRdo = (valor) => {
+    if (!valor) return `Execução ${projeto.nome || "Obra"}`;
+    const data = new Date(`${valor}T12:00:00`);
+    const dataFormatada = Number.isNaN(data.getTime())
+      ? valor
+      : `${String(data.getDate()).padStart(2, "0")}/${String(data.getMonth() + 1).padStart(2, "0")}/${String(data.getFullYear()).slice(-2)}`;
+    return `${dataFormatada} - Execução ${projeto.nome || "Obra"}`;
+  };
   const [formulario, setFormulario] = useState(registroVazio);
   const [editandoId, setEditandoId] = useState(null);
   const [profissionaisSelecionados, setProfissionaisSelecionados] = useState([]);
@@ -3920,7 +3928,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       atividades,
       ocorrencias: formulario.ocorrencias.trim(),
       descricao: atividades,
-      titulo: "",
+      titulo: nomeRdo(formulario.data),
       responsavel: "",
       clima: formulario.clima.trim(),
       atualizadoEm: new Date().toISOString(),
@@ -4002,7 +4010,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       .join("");
     const imprimir = window.open("", "_blank", "width=1000,height=800");
     if (!imprimir) return;
-    imprimir.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>RDO - ${escapeHtml(projeto.nome)}</title>
+    imprimir.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(registro.titulo || nomeRdo(registro.data))}</title>
       <style>
         @page { size: A4; margin: 14mm 12mm; }
         * { box-sizing: border-box; }
@@ -4033,7 +4041,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       <header class="topo">
         <img class="logo" src="${escapeHtml(alphaLogo)}" alt="Alpha Engenharia">
         <div class="marca"><h1>ALPHA ENGENHARIA</h1><p>Ordem de serviço e acompanhamento de obra</p></div>
-        <div class="documento">RELATÓRIO DIÁRIO DE OBRA<small>RDO · ${escapeHtml(formatarDataComDiaSemana(registro.data))}</small></div>
+        <div class="documento">RELATÓRIO DIÁRIO DE OBRA<small>${escapeHtml(registro.titulo || nomeRdo(registro.data))}</small></div>
       </header>
       <div class="titulo">Identificação do contrato</div>
       <section class="dados">
@@ -4335,7 +4343,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
             <p className="text-[11px] uppercase tracking-wide text-[#6f9255] font-semibold">{formatarDataComDiaSemana(registro.data)}</p>
-                <h3 className="text-sm font-semibold text-stone-800 mt-1">Registro de obra</h3>
+                <h3 className="text-sm font-semibold text-stone-800 mt-1">{registro.titulo || nomeRdo(registro.data)}</h3>
               </div>
               <div className="flex gap-1 shrink-0">
                 <button type="button" onClick={() => exportarRegistro(registro)} title="Exportar RDO em PDF" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-600 hover:bg-stone-50"><Download size={14} /></button>
