@@ -1997,11 +1997,16 @@ export default function App() {
     setProjetos(projetosAtualizados);
   };
 
-  const atualizarDiarioProjeto = (projectId, diarioObra, profissionaisObra) => {
+  const atualizarDiarioProjeto = (projectId, diarioObra, profissionaisObra, ferramentasObra) => {
     const dadosAtuais = dadosAtuaisRef.current;
     const projetosAtualizados = dadosAtuais.projetos.map((projeto) =>
       projeto.id === projectId
-        ? { ...projeto, diarioObra, ...(profissionaisObra ? { profissionaisObra } : {}) }
+        ? {
+            ...projeto,
+            diarioObra,
+            ...(profissionaisObra ? { profissionaisObra } : {}),
+            ...(ferramentasObra ? { ferramentasObra } : {}),
+          }
         : projeto
     );
     dadosAtuaisRef.current = { ...dadosAtuais, projetos: projetosAtualizados };
@@ -3639,7 +3644,7 @@ export default function App() {
           <DiarioObraTab
             projeto={projetoAtivo}
             cliente={clienteAtivo}
-            onAtualizar={(diarioObra, profissionaisObra) => atualizarDiarioProjeto(projetoAtivo.id, diarioObra, profissionaisObra)}
+            onAtualizar={(diarioObra, profissionaisObra, ferramentasObra) => atualizarDiarioProjeto(projetoAtivo.id, diarioObra, profissionaisObra, ferramentasObra)}
             onSalvar={() => salvarProjeto(projetoAtivo.id)}
             saving={busy}
           />
@@ -3837,6 +3842,7 @@ export default function App() {
 function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
   const registros = Array.isArray(projeto?.diarioObra) ? projeto.diarioObra : [];
   const profissionaisSalvos = Array.isArray(projeto?.profissionaisObra) ? projeto.profissionaisObra : [];
+  const ferramentasSalvas = Array.isArray(projeto?.ferramentasObra) ? projeto.ferramentasObra : [];
   const funcoesPadrao = ["SERVENTE", "PEDREIRO", "CARPINT.", "ARMADOR", "BOMBEIRO", "ELETRICISTA", "PINTOR", "ALMOX.", "OP. MÁQ.", "MOTO-RISTA", "VIGIA", "ENCAR.", "MESTRE", "FISCAL", "ENGº.", "APONTADOR"];
   const registroVazio = () => ({
     data: new Date().toISOString().slice(0, 10),
@@ -3849,6 +3855,8 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
   const [editandoId, setEditandoId] = useState(null);
   const [profissionaisSelecionados, setProfissionaisSelecionados] = useState([]);
   const [novoProfissional, setNovoProfissional] = useState({ nome: "", funcao: funcoesPadrao[0] });
+  const [ferramentasSelecionadas, setFerramentasSelecionadas] = useState([]);
+  const [novaFerramenta, setNovaFerramenta] = useState("");
 
   const atualizarCampo = (campo, valor) =>
     setFormulario((atual) => ({ ...atual, [campo]: valor }));
@@ -3881,6 +3889,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       id: editandoId || uid(),
       funcionarios,
       profissionaisIds: profissionaisSelecionados,
+      ferramentasIds: ferramentasSelecionadas,
       atividades,
       ocorrencias: formulario.ocorrencias.trim(),
       descricao: atividades,
@@ -3896,6 +3905,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     setFormulario(registroVazio());
     setEditandoId(null);
     setProfissionaisSelecionados([]);
+    setFerramentasSelecionadas([]);
   };
 
   const editarRegistro = (registro) => {
@@ -3916,6 +3926,9 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     });
     setProfissionaisSelecionados(
       Array.isArray(registro.profissionaisIds) ? registro.profissionaisIds : []
+    );
+    setFerramentasSelecionadas(
+      Array.isArray(registro.ferramentasIds) ? registro.ferramentasIds : []
     );
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -3946,6 +3959,10 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
           <td>${escapeHtml(item.nomes || "—")}</td>
           <td class="center">${escapeHtml(item.quantidade || "0")}</td>
         </tr>`)
+      .join("");
+    const ferramentasPresentes = ferramentasSalvas
+      .filter((ferramenta) => (registro.ferramentasIds || []).includes(ferramenta.id))
+      .map((ferramenta) => `<li>${escapeHtml(ferramenta.nome)}</li>`)
       .join("");
     const imprimir = window.open("", "_blank", "width=1000,height=800");
     if (!imprimir) return;
@@ -3992,6 +4009,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
         <div class="dado"><span class="rotulo">Clima / condições</span>${escapeHtml(registro.clima || "Não informado")}</div>
       </section>
       <div class="bloco"><h2>Mão de obra presente</h2><table><thead><tr><th>Função</th><th>Profissionais</th><th class="center">Qtd.</th></tr></thead><tbody>${linhasFuncionarios || '<tr><td colspan="3">Nenhum profissional informado.</td></tr>'}</tbody></table></div>
+      <div class="bloco"><h2>Ferramentas utilizadas</h2><div class="texto">${ferramentasPresentes ? `<ul>${ferramentasPresentes}</ul>` : "Nenhuma ferramenta informada."}</div></div>
       <div class="bloco"><h2>Atividades executadas</h2><div class="texto">${escapeHtml(registro.atividades || registro.descricao || "Não informado").replace(/\n/g, "<br>")}</div></div>
       <div class="bloco"><h2>Ocorrências</h2><div class="texto">${escapeHtml(registro.ocorrencias || "Nenhuma ocorrência registrada.").replace(/\n/g, "<br>")}</div></div>
       <div class="assinaturas"><div class="assinatura">Responsável pela execução</div><div class="assinatura">Responsável pelo acompanhamento</div></div>
@@ -4025,6 +4043,22 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
 
   const alternarProfissional = (id) =>
     setProfissionaisSelecionados((atual) =>
+      atual.includes(id) ? atual.filter((item) => item !== id) : [...atual, id]
+    );
+
+  const cadastrarFerramenta = (evento) => {
+    evento.preventDefault();
+    const nome = novaFerramenta.trim();
+    if (!nome) return;
+    const ferramenta = { id: uid(), nome };
+    const proximasFerramentas = [...ferramentasSalvas, ferramenta];
+    onAtualizar(registros, undefined, proximasFerramentas);
+    setNovaFerramenta("");
+    setFerramentasSelecionadas((atual) => [...atual, ferramenta.id]);
+  };
+
+  const alternarFerramenta = (id) =>
+    setFerramentasSelecionadas((atual) =>
       atual.includes(id) ? atual.filter((item) => item !== id) : [...atual, id]
     );
 
@@ -4135,6 +4169,39 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
               </div>
             )}
           </div>
+          <div className="mb-3 rounded-md border border-stone-200 bg-stone-50 p-3">
+            <h5 className="text-xs font-semibold text-stone-700">Cadastro de ferramentas</h5>
+            <div className="mt-2 flex flex-col sm:flex-row gap-2">
+              <input
+                value={novaFerramenta}
+                onChange={(e) => setNovaFerramenta(e.target.value)}
+                placeholder="Ex.: Betoneira, vibrador, serra circular"
+                className="h-8 flex-1 px-2 border border-stone-300 rounded-md text-xs"
+                aria-label="Nome da ferramenta"
+              />
+              <button type="button" onClick={cadastrarFerramenta} className="h-8 inline-flex items-center justify-center gap-1 px-3 bg-[#6f9255] text-white rounded-md text-xs font-medium hover:bg-[#5f7f49]">
+                <Plus size={13} /> Cadastrar
+              </button>
+            </div>
+            <p className="text-[11px] text-stone-500 mt-2">Ferramentas utilizadas neste RDO:</p>
+            {ferramentasSalvas.length === 0 ? (
+              <p className="text-[11px] text-stone-400 mt-1">Nenhuma ferramenta cadastrada neste orçamento.</p>
+            ) : (
+              <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                {ferramentasSalvas.map((ferramenta) => (
+                  <label key={ferramenta.id} className="flex items-center gap-2 rounded border border-stone-200 bg-white px-2 py-1.5 text-xs text-stone-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ferramentasSelecionadas.includes(ferramenta.id)}
+                      onChange={() => alternarFerramenta(ferramenta.id)}
+                      className="accent-[#6f9255]"
+                    />
+                    <span className="truncate">{ferramenta.nome}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 border border-stone-300">
             {quadroFuncionarios.map((funcionario, indice) => (
               <div key={`funcionario-${indice}`} className="min-h-[104px] p-2 border-r border-b border-stone-300 bg-stone-50/40">
@@ -4201,6 +4268,14 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
                     <p key={`${registro.id}-funcionario-${indice}`}><strong>{funcionario.funcao || "Função não informada"}:</strong> {funcionario.nomes || "Nome não informado"} ({funcionario.quantidade || 0})</p>
                   ))}
                 </div>
+              </div>
+            )}
+            {Array.isArray(registro.ferramentasIds) && registro.ferramentasIds.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-stone-100">
+                <p className="text-[10px] uppercase tracking-wide text-stone-400 font-semibold mb-2">Ferramentas utilizadas</p>
+                <p className="text-xs text-stone-600">
+                  {ferramentasSalvas.filter((ferramenta) => registro.ferramentasIds.includes(ferramenta.id)).map((ferramenta) => ferramenta.nome).join(", ") || "Nenhuma ferramenta informada"}
+                </p>
               </div>
             )}
             {registro.clima && (
