@@ -1997,10 +1997,12 @@ export default function App() {
     setProjetos(projetosAtualizados);
   };
 
-  const atualizarDiarioProjeto = (projectId, diarioObra) => {
+  const atualizarDiarioProjeto = (projectId, diarioObra, profissionaisObra) => {
     const dadosAtuais = dadosAtuaisRef.current;
     const projetosAtualizados = dadosAtuais.projetos.map((projeto) =>
-      projeto.id === projectId ? { ...projeto, diarioObra } : projeto
+      projeto.id === projectId
+        ? { ...projeto, diarioObra, ...(profissionaisObra ? { profissionaisObra } : {}) }
+        : projeto
     );
     dadosAtuaisRef.current = { ...dadosAtuais, projetos: projetosAtualizados };
     setProjetos(projetosAtualizados);
@@ -3637,7 +3639,7 @@ export default function App() {
           <DiarioObraTab
             projeto={projetoAtivo}
             cliente={clienteAtivo}
-            onAtualizar={(diarioObra) => atualizarDiarioProjeto(projetoAtivo.id, diarioObra)}
+            onAtualizar={(diarioObra, profissionaisObra) => atualizarDiarioProjeto(projetoAtivo.id, diarioObra, profissionaisObra)}
             onSalvar={() => salvarProjeto(projetoAtivo.id)}
             saving={busy}
           />
@@ -3834,6 +3836,7 @@ export default function App() {
 
 function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
   const registros = Array.isArray(projeto?.diarioObra) ? projeto.diarioObra : [];
+  const profissionaisSalvos = Array.isArray(projeto?.profissionaisObra) ? projeto.profissionaisObra : [];
   const funcoesPadrao = ["SERVENTE", "PEDREIRO", "CARPINT.", "ARMADOR", "BOMBEIRO", "ELETRICISTA", "PINTOR", "ALMOX.", "OP. MÁQ.", "MOTO-RISTA", "VIGIA", "ENCAR.", "MESTRE", "FISCAL", "ENGº.", "APONTADOR"];
   const registroVazio = () => ({
     data: new Date().toISOString().slice(0, 10),
@@ -3844,6 +3847,8 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
   });
   const [formulario, setFormulario] = useState(registroVazio);
   const [editandoId, setEditandoId] = useState(null);
+  const [profissionaisSelecionados, setProfissionaisSelecionados] = useState([]);
+  const [novoProfissional, setNovoProfissional] = useState({ nome: "", funcao: funcoesPadrao[0] });
 
   const atualizarCampo = (campo, valor) =>
     setFormulario((atual) => ({ ...atual, [campo]: valor }));
@@ -3852,7 +3857,18 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     evento.preventDefault();
     const atividades = formulario.atividades.trim();
     if (!atividades) return;
-    const funcionarios = (formulario.funcionarios || [])
+    const funcionarios = (profissionaisSelecionados.length > 0
+      ? funcoesPadrao.map((funcao) => {
+          const presentes = profissionaisSalvos.filter(
+            (profissional) => profissionaisSelecionados.includes(profissional.id) && profissional.funcao === funcao
+          );
+          return {
+            funcao,
+            nomes: presentes.map((profissional) => profissional.nome).join(", "),
+            quantidade: presentes.length ? String(presentes.length) : "",
+          };
+        })
+      : formulario.funcionarios || [])
       .map((item) => ({
         funcao: String(item.funcao || "").trim(),
         nomes: String(item.nomes || "").trim(),
@@ -3864,6 +3880,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       ...formulario,
       id: editandoId || uid(),
       funcionarios,
+      profissionaisIds: profissionaisSelecionados,
       atividades,
       ocorrencias: formulario.ocorrencias.trim(),
       descricao: atividades,
@@ -3878,6 +3895,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     onAtualizar(proximos);
     setFormulario(registroVazio());
     setEditandoId(null);
+    setProfissionaisSelecionados([]);
   };
 
   const editarRegistro = (registro) => {
@@ -3896,6 +3914,9 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       ocorrencias: registro.ocorrencias || "",
       clima: registro.clima || "",
     });
+    setProfissionaisSelecionados(
+      Array.isArray(registro.profissionaisIds) ? registro.profissionaisIds : []
+    );
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -3924,6 +3945,36 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       ),
     }));
   };
+
+  const cadastrarProfissional = (evento) => {
+    evento.preventDefault();
+    const nome = novoProfissional.nome.trim();
+    const funcao = novoProfissional.funcao.trim();
+    if (!nome || !funcao) return;
+    const profissional = { id: uid(), nome, funcao };
+    const proximosProfissionais = [...profissionaisSalvos, profissional];
+    onAtualizar(registros, proximosProfissionais);
+    setNovoProfissional({ nome: "", funcao: funcoesPadrao[0] });
+    setProfissionaisSelecionados((atual) => [...atual, profissional.id]);
+  };
+
+  const alternarProfissional = (id) =>
+    setProfissionaisSelecionados((atual) =>
+      atual.includes(id) ? atual.filter((item) => item !== id) : [...atual, id]
+    );
+
+  const quadroFuncionarios = profissionaisSelecionados.length > 0
+    ? funcoesPadrao.map((funcao) => {
+        const presentes = profissionaisSalvos.filter(
+          (profissional) => profissionaisSelecionados.includes(profissional.id) && profissional.funcao === funcao
+        );
+        return {
+          funcao,
+          nomes: presentes.map((profissional) => profissional.nome).join(", "),
+          quantidade: presentes.length ? String(presentes.length) : "",
+        };
+      })
+    : (formulario.funcionarios || []);
 
   return (
     <div className="space-y-4">
@@ -3974,15 +4025,57 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
           <div className="flex items-center justify-between gap-3 mb-2">
             <div>
               <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-600">Mão de obra presente</h4>
-              <p className="text-[11px] text-stone-400 mt-0.5">Preencha a quantidade e os nomes em cada célula do quadro.</p>
+              <p className="text-[11px] text-stone-400 mt-0.5">Cadastre os profissionais uma vez e marque quem está presente neste RDO.</p>
             </div>
           </div>
+          <div className="mb-3 rounded-md border border-stone-200 bg-stone-50 p-3">
+            <h5 className="text-xs font-semibold text-stone-700">Cadastro de profissionais</h5>
+            <form onSubmit={cadastrarProfissional} className="mt-2 flex flex-col sm:flex-row gap-2">
+              <input
+                value={novoProfissional.nome}
+                onChange={(e) => setNovoProfissional((atual) => ({ ...atual, nome: e.target.value }))}
+                placeholder="Nome completo"
+                className="h-8 flex-1 px-2 border border-stone-300 rounded-md text-xs"
+                aria-label="Nome do profissional"
+              />
+              <select
+                value={novoProfissional.funcao}
+                onChange={(e) => setNovoProfissional((atual) => ({ ...atual, funcao: e.target.value }))}
+                className="h-8 sm:w-40 px-2 border border-stone-300 rounded-md text-xs bg-white"
+                aria-label="Função do profissional"
+              >
+                {funcoesPadrao.map((funcao) => <option key={funcao} value={funcao}>{funcao}</option>)}
+              </select>
+              <button type="submit" className="h-8 inline-flex items-center justify-center gap-1 px-3 bg-[#6f9255] text-white rounded-md text-xs font-medium hover:bg-[#5f7f49]">
+                <Plus size={13} /> Cadastrar
+              </button>
+            </form>
+            <p className="text-[11px] text-stone-500 mt-2">Profissionais presentes neste RDO:</p>
+            {profissionaisSalvos.length === 0 ? (
+              <p className="text-[11px] text-stone-400 mt-1">Nenhum profissional cadastrado neste orçamento.</p>
+            ) : (
+              <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                {profissionaisSalvos.map((profissional) => (
+                  <label key={profissional.id} className="flex items-center gap-2 rounded border border-stone-200 bg-white px-2 py-1.5 text-xs text-stone-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={profissionaisSelecionados.includes(profissional.id)}
+                      onChange={() => alternarProfissional(profissional.id)}
+                      className="accent-[#6f9255]"
+                    />
+                    <span className="truncate">{profissional.nome}</span>
+                    <span className="ml-auto text-[10px] text-stone-400">{profissional.funcao}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 border border-stone-300">
-            {(formulario.funcionarios || []).map((funcionario, indice) => (
+            {quadroFuncionarios.map((funcionario, indice) => (
               <div key={`funcionario-${indice}`} className="min-h-[104px] p-2 border-r border-b border-stone-300 bg-stone-50/40">
                 <p className="text-[10px] font-semibold text-stone-700 underline decoration-stone-400 underline-offset-2 truncate">{funcionario.funcao}</p>
-                <input type="number" min="0" step="1" value={funcionario.quantidade} onChange={(e) => atualizarFuncionario(indice, "quantidade", e.target.value)} placeholder="Qtd." aria-label={`Quantidade de ${funcionario.funcao}`} className="mt-2 w-full h-7 px-1.5 border border-stone-300 rounded text-xs font-mono" />
-                <input value={funcionario.nomes} onChange={(e) => atualizarFuncionario(indice, "nomes", e.target.value)} placeholder="Nome(s)" aria-label={`Nome dos ${funcionario.funcao}`} className="mt-1 w-full h-7 px-1.5 border border-stone-300 rounded text-[11px]" />
+                <input type="number" min="0" step="1" value={funcionario.quantidade} readOnly={profissionaisSelecionados.length > 0} onChange={(e) => atualizarFuncionario(indice, "quantidade", e.target.value)} placeholder="Qtd." aria-label={`Quantidade de ${funcionario.funcao}`} className="mt-2 w-full h-7 px-1.5 border border-stone-300 rounded text-xs font-mono read-only:bg-stone-100" />
+                <input value={funcionario.nomes} readOnly={profissionaisSelecionados.length > 0} onChange={(e) => atualizarFuncionario(indice, "nomes", e.target.value)} placeholder="Nome(s)" aria-label={`Nome dos ${funcionario.funcao}`} className="mt-1 w-full h-7 px-1.5 border border-stone-300 rounded text-[11px] read-only:bg-stone-100" />
               </div>
             ))}
           </div>
