@@ -3881,7 +3881,8 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     const dataFormatada = Number.isNaN(data.getTime())
       ? valor
       : `${String(data.getDate()).padStart(2, "0")}/${String(data.getMonth() + 1).padStart(2, "0")}/${String(data.getFullYear()).slice(-2)}`;
-    return `${dataFormatada} - Execução ${projeto.nome || "Obra"}`;
+    const nomeObra = String(projeto.nome || "Obra").replace(/^execução\s+/i, "");
+    return `${dataFormatada} - Execução ${nomeObra}`;
   };
   const [formulario, setFormulario] = useState(registroVazio);
   const [editandoId, setEditandoId] = useState(null);
@@ -4012,9 +4013,9 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     if (!imprimir) return;
     imprimir.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(registro.titulo || nomeRdo(registro.data))}</title>
       <style>
-        @page { size: A4; margin: 14mm 12mm; }
+        @page { size: A4; margin: 0; }
         * { box-sizing: border-box; }
-        body { margin: 0; color: #111; font-family: Arial, sans-serif; font-size: 10pt; }
+        body { margin: 0; padding: 14mm 12mm; color: #111; font-family: Arial, sans-serif; font-size: 10pt; }
         .topo { border-bottom: 3px solid #7b9a56; padding-bottom: 8px; display: flex; align-items: center; gap: 14px; }
         .logo { width: 72px; height: 58px; object-fit: contain; }
         .marca { flex: 1; }
