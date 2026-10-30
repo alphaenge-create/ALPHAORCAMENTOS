@@ -4030,7 +4030,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
           </div>
           <div className="mb-3 rounded-md border border-stone-200 bg-stone-50 p-3">
             <h5 className="text-xs font-semibold text-stone-700">Cadastro de profissionais</h5>
-            <form onSubmit={cadastrarProfissional} className="mt-2 flex flex-col sm:flex-row gap-2">
+            <div className="mt-2 flex flex-col sm:flex-row gap-2">
               <input
                 value={novoProfissional.nome}
                 onChange={(e) => setNovoProfissional((atual) => ({ ...atual, nome: e.target.value }))}
@@ -4046,10 +4046,10 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
               >
                 {funcoesPadrao.map((funcao) => <option key={funcao} value={funcao}>{funcao}</option>)}
               </select>
-              <button type="submit" className="h-8 inline-flex items-center justify-center gap-1 px-3 bg-[#6f9255] text-white rounded-md text-xs font-medium hover:bg-[#5f7f49]">
+              <button type="button" onClick={cadastrarProfissional} className="h-8 inline-flex items-center justify-center gap-1 px-3 bg-[#6f9255] text-white rounded-md text-xs font-medium hover:bg-[#5f7f49]">
                 <Plus size={13} /> Cadastrar
               </button>
-            </form>
+            </div>
             <p className="text-[11px] text-stone-500 mt-2">Profissionais presentes neste RDO:</p>
             {profissionaisSalvos.length === 0 ? (
               <p className="text-[11px] text-stone-400 mt-1">Nenhum profissional cadastrado neste orçamento.</p>
