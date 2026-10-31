@@ -4001,7 +4001,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       .map((item) => `
         <tr>
           <td>${escapeHtml(item.funcao)}</td>
-          <td>${escapeHtml(item.nomes || "—")}</td>
+          <td>${(String(item.nomes || "—").split(",").map((nome) => nome.trim()).filter(Boolean).map((nome) => `<div>${escapeHtml(nome)};</div>`).join(""))}</td>
           <td class="center">${escapeHtml(item.quantidade || "0")}</td>
         </tr>`)
       .join("");
@@ -4374,7 +4374,10 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
                 <p className="text-[10px] uppercase tracking-wide text-stone-400 font-semibold mb-2">Mão de obra presente</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-xs text-stone-600">
                   {registro.funcionarios.map((funcionario, indice) => (
-                    <p key={`${registro.id}-funcionario-${indice}`}><strong>{funcionario.funcao || "Função não informada"}:</strong> {funcionario.nomes || "Nome não informado"} ({funcionario.quantidade || 0})</p>
+                    <p key={`${registro.id}-funcionario-${indice}`}>
+                      <strong>{funcionario.funcao || "Função não informada"}:</strong> ({funcionario.quantidade || 0})
+                      <span className="block ml-2">{String(funcionario.nomes || "Nome não informado").split(",").map((nome) => nome.trim()).filter(Boolean).map((nome, nomeIndice) => <span key={`${registro.id}-funcionario-${indice}-nome-${nomeIndice}`} className="block">{nome}{nomeIndice < String(funcionario.nomes || "").split(",").filter((item) => item.trim()).length - 1 ? ";" : ""}</span>)}</span>
+                    </p>
                   ))}
                 </div>
               </div>
