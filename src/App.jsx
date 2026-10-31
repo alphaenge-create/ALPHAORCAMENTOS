@@ -4059,7 +4059,6 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       <div class="bloco"><h2>Mão de obra presente</h2><table><thead><tr><th>Função</th><th>Profissionais</th><th class="center">Qtd.</th></tr></thead><tbody>${linhasFuncionarios || '<tr><td colspan="3">Nenhum profissional informado.</td></tr>'}</tbody></table></div>
       <div class="bloco"><h2>Ferramentas utilizadas</h2><div class="texto">${ferramentasPresentes ? `<ul>${ferramentasPresentes}</ul>` : "Nenhuma ferramenta informada."}</div></div>
       <div class="bloco"><h2>Atividades executadas</h2><div class="texto">${escapeHtml(registro.atividades || registro.descricao || "Não informado").replace(/\n/g, "<br>")}</div></div>
-      <div class="bloco"><h2>Ocorrências</h2><div class="texto">${escapeHtml(registro.ocorrencias || "Nenhuma ocorrência registrada.").replace(/\n/g, "<br>")}</div></div>
       <div class="assinaturas"><div class="assinatura">Responsável pela execução</div><div class="assinatura">Responsável pelo acompanhamento</div></div>
       </body></html>`);
     imprimir.document.close();
@@ -4325,10 +4324,6 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
           Atividades executadas
           <textarea value={formulario.atividades} onChange={(e) => atualizarCampo("atividades", e.target.value)} placeholder="Descreva os serviços executados e materiais recebidos." required rows={3} className="mt-1 w-full px-3 py-2 border border-stone-300 rounded-md text-sm resize-y" />
         </label>
-        <label className="block text-xs text-stone-600">
-          Ocorrências
-          <textarea value={formulario.ocorrencias} onChange={(e) => atualizarCampo("ocorrencias", e.target.value)} placeholder="Registre impedimentos, atrasos, visitas, acidentes ou outras ocorrências." rows={3} className="mt-1 w-full px-3 py-2 border border-stone-300 rounded-md text-sm resize-y" />
-        </label>
         <div className="flex justify-end gap-2">
           <button type="submit" className="inline-flex items-center gap-2 px-3 py-2 bg-stone-900 text-white rounded-md text-xs font-medium hover:bg-stone-800">
             <Save size={14} /> {editandoId ? "Atualizar registro" : "Adicionar registro"}
@@ -4363,12 +4358,6 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
                 <p className="text-sm text-stone-700 whitespace-pre-wrap mt-1">{registro.atividades || registro.descricao}</p>
               </div>
             ) : null}
-            {registro.ocorrencias && (
-              <div className="mt-3">
-                <p className="text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Ocorrências</p>
-                <p className="text-sm text-stone-700 whitespace-pre-wrap mt-1">{registro.ocorrencias}</p>
-              </div>
-            )}
             {Array.isArray(registro.funcionarios) && registro.funcionarios.length > 0 && (
               <div className="mt-3 pt-3 border-t border-stone-100">
                 <p className="text-[10px] uppercase tracking-wide text-stone-400 font-semibold mb-2">Mão de obra presente</p>
