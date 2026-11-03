@@ -4066,6 +4066,25 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     setTimeout(() => imprimir.print(), 300);
   };
 
+  const exportarRegistroDocx = async (registro) => {
+    try {
+      const { exportarDiarioObraDocx } = await import("./propostas/diarioObra.js");
+      const ferramentas = Array.isArray(registro.ferramentas) && registro.ferramentas.length > 0
+        ? registro.ferramentas
+        : ferramentasSalvas.filter((ferramenta) => (registro.ferramentasIds || []).includes(ferramenta.id));
+      await exportarDiarioObraDocx({
+        projeto,
+        cliente,
+        registro,
+        titulo: registro.titulo || nomeRdo(registro.data),
+        ferramentas,
+        alphaDados: alphaDadosRdo,
+      });
+    } catch (error) {
+      window.alert(`Não foi possível exportar o RDO em DOCX: ${error.message || "erro desconhecido"}`);
+    }
+  };
+
   const atualizarFuncionario = (indice, campo, valor) => {
     setFormulario((atual) => ({
       ...atual,
@@ -4348,6 +4367,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
               </div>
               <div className="flex gap-1 shrink-0">
                 <button type="button" onClick={() => exportarRegistro(registro)} title="Exportar RDO em PDF" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-600 hover:bg-stone-50"><Download size={14} /></button>
+                <button type="button" onClick={() => exportarRegistroDocx(registro)} title="Exportar RDO em DOCX" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-600 hover:bg-stone-50"><FileText size={14} /></button>
                 <button type="button" onClick={() => editarRegistro(registro)} title="Editar registro" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-600 hover:bg-stone-50"><Pencil size={14} /></button>
                 <button type="button" onClick={() => excluirRegistro(registro.id)} title="Excluir registro" className="w-8 h-8 inline-flex items-center justify-center border border-stone-300 rounded-md text-stone-500 hover:bg-red-50 hover:text-red-600"><Trash2 size={14} /></button>
               </div>
