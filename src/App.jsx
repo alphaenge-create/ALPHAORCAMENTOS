@@ -3528,6 +3528,9 @@ export default function App() {
                     const totalEtapaComBdi = somarMoeda(itensAtivosDaEtapa(etapa).map(
                       (item) => itemVendaResumo(item, bdiCalc, cpus, catalogMap).total
                     ));
+                    const totalEtapaCusto = somarMoeda(itensAtivosDaEtapa(etapa).map(
+                      (item) => valorCustoItem(item, "total")
+                    ));
 
                     return (
                       <div key={etapaId} className="bg-stone-50/30">
@@ -3535,11 +3538,14 @@ export default function App() {
                           onClick={() => setEtapasExpandidas(p => ({ ...p, [etapaId]: !isEtapaAberta }))}
                           className="grid grid-cols-12 gap-2 px-4 py-2 bg-stone-200/60 text-stone-800 text-xs font-bold items-center uppercase tracking-wide cursor-pointer hover:bg-stone-200 select-none"
                         >
-                          <span className="col-span-10 flex items-center gap-1.5">
+                          <span className="col-span-9 flex items-center gap-1.5">
                             {isEtapaAberta ? <ChevronDown size={14} className="text-stone-500" /> : <ChevronRight size={14} className="text-stone-500" />}
                             {numEtapa}. {etapa.nome}
                           </span>
-                          <span className="col-span-2 text-right font-mono text-stone-900">
+                          <span className="col-span-1.5 text-right font-mono text-stone-600">
+                            R$ {fmt(totalEtapaCusto)}
+                          </span>
+                          <span className="col-span-1.5 text-right font-mono text-stone-900">
                             R$ {fmt(totalEtapaComBdi)}
                           </span>
                         </div>
