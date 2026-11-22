@@ -1759,6 +1759,7 @@ export default function App() {
     if (key === "estrutura") return item.servico || item.descricao || item.codigo || "";
     if (key === "unidade") return item.unidade || "";
     if (key === "quantidade") return quantidade;
+    if (key === "custoTotal") return valorCustoItem(item, "total");
     if (key === "unitario") return unitario;
     return total;
   };
@@ -1769,6 +1770,7 @@ export default function App() {
     if (key === "estrutura") return insumo.descricao || insumo.codigo || "";
     if (key === "unidade") return insumo.unidade || "";
     if (key === "quantidade") return quantidade;
+    if (key === "custoTotal") return quantidade * insumoValorUnitario(insumo, cpus, catalogMap);
     if (key === "unitario") return unitario;
     return quantidade * unitario;
   };
@@ -1777,6 +1779,7 @@ export default function App() {
     const itens = itensAtivosDaEtapa(etapa);
     if (key === "estrutura") return etapa.nome || "";
     if (key === "quantidade") return itens.reduce((total, item) => total + num(item.quantidade), 0);
+    if (key === "custoTotal") return itens.reduce((total, item) => total + valorCustoItem(item, "total"), 0);
     if (key === "total") return itens.reduce((total, item) => total + valorVendaItem(item, "total"), 0);
     return "";
   };
@@ -3503,11 +3506,12 @@ export default function App() {
                 </div>
               )}
               <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-stone-100 border-b border-stone-200 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
-                <BotaoOrdenacao coluna="estrutura" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-6">Estrutura (Etapa / CPU / Insumo)</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="estrutura" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-5">Estrutura (Etapa / CPU / Insumo)</BotaoOrdenacao>
                 <BotaoOrdenacao coluna="unidade" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="center">Und</BotaoOrdenacao>
                 <BotaoOrdenacao coluna="quantidade" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Qtd Prop.</BotaoOrdenacao>
                 <BotaoOrdenacao coluna="unitario" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Preço Unit Venda</BotaoOrdenacao>
-                <BotaoOrdenacao coluna="total" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-2" align="right" direcaoInicial="desc">Total Venda</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="custoTotal" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Total Custo</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="total" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Total Venda</BotaoOrdenacao>
               </div>
 
               <div className="divide-y divide-stone-200 max-h-[600px] overflow-y-auto">
@@ -3548,6 +3552,7 @@ export default function App() {
 
                           const resumoVenda = itemVendaResumo(item, bdiCalc, cpus, catalogMap);
                           const totalCpuComBdi = resumoVenda.unitario;
+                          const totalCpuCusto = valorCustoItem(item, "total");
 
                           return (
                             <div key={itemId} className="border-b border-stone-100">
@@ -3555,14 +3560,15 @@ export default function App() {
                                 onClick={() => setCpusExpandidas(p => ({ ...p, [itemId]: !isCpuAberta }))}
                                 className="grid grid-cols-12 gap-2 px-4 py-2 bg-white text-xs items-center font-semibold text-stone-700 pl-8 cursor-pointer hover:bg-stone-50 select-none"
                               >
-                                <span className="col-span-6 truncate text-stone-900 flex items-center gap-1">
+                                <span className="col-span-5 truncate text-stone-900 flex items-center gap-1">
                                   {isCpuAberta ? <ChevronDown size={13} className="text-stone-400 shrink-0" /> : <ChevronRight size={13} className="text-stone-400 shrink-0" />}
                                   {numCpu}. {item.codigo ? `[${item.codigo}] ` : ""}{item.servico || item.descricao}
                                 </span>
                                 <span className="col-span-1 text-center font-mono text-stone-400">{item.unidade}</span>
                                 <span className="col-span-1.5 text-right font-mono">{formatarPrecisao(qtdItem)}</span>
                                 <span className="col-span-1.5 min-w-0 break-words text-right font-mono text-stone-500">R$ {formatarPrecisao(totalCpuComBdi)}</span>
-                                <span className="col-span-2 text-right font-mono text-stone-900">
+                                <span className="col-span-1.5 text-right font-mono text-stone-600">R$ {fmt(totalCpuCusto)}</span>
+                                <span className="col-span-1.5 text-right font-mono text-stone-900">
                                   R$ {fmt(resumoVenda.total)}
                                 </span>
                               </div>
@@ -3572,13 +3578,14 @@ export default function App() {
                                   {ordenarLista(item.insumos || [], ordenacaoPlanilhaVenda, (insumo, key) => valorVendaInsumo(insumo, qtdItem, key)).map((insumo, idxInsumo) => {
                                     const numInsumo = `${numCpu}.${idxInsumo + 1}`;
                                     const precoVendaInsumo = valorVendaUnitarioInsumo(insumo, bdiCalc, cpus, catalogMap);
-                                    
+                                    const custoUnitarioInsumo = insumoValorUnitario(insumo, cpus, catalogMap);
                                     const qtdCalculada = num(insumo.coeficiente) * qtdItem;
                                     const vendaTotalInsumo = qtdCalculada * precoVendaInsumo;
+                                    const custoTotalInsumo = qtdCalculada * custoUnitarioInsumo;
 
-                                    return (
+                                      return (
                                       <div key={insumo.id || idxInsumo} className="grid grid-cols-12 gap-2 px-4 py-1.5 text-[11px] items-center text-stone-600 pl-14 hover:bg-stone-100/40">
-                                        <span className="col-span-6 truncate uppercase font-sans text-stone-500">
+                                        <span className="col-span-5 truncate uppercase font-sans text-stone-500">
                                           {numInsumo}. <span className="text-[9px] font-mono font-bold text-stone-400 border border-stone-200 px-1 py-0.5 rounded bg-white mr-1">{insumo.tipo}</span> {insumo.descricao}
                                         </span>
                                         <span className="col-span-1 text-center font-mono text-stone-400 uppercase text-[10px]">{insumo.unidade || "un"}</span>
@@ -3586,11 +3593,12 @@ export default function App() {
                                           {formatarPrecisao(qtdCalculada)}
                                         </span>
                                         <span className="col-span-1.5 text-right font-mono text-stone-400">R$ {fmt(precoVendaInsumo)}</span>
-                                        <span className="col-span-2 text-right font-mono font-medium text-blue-700">
+                                        <span className="col-span-1.5 text-right font-mono text-stone-500">R$ {fmt(custoTotalInsumo)}</span>
+                                        <span className="col-span-1.5 text-right font-mono font-medium text-blue-700">
                                           R$ {fmt(vendaTotalInsumo)}
                                         </span>
                                       </div>
-                                    );
+                                      );
                                   })}
                                 </div>
                               )}
@@ -3615,11 +3623,14 @@ export default function App() {
                   </div>
                 )}
                 <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-900 text-white text-sm font-semibold uppercase tracking-wider">
-                  <span className="col-span-6">VALOR FINAL DE VENDA</span>
+                  <span className="col-span-5">VALOR FINAL DE VENDA</span>
+                  <span className="col-span-1"></span>
                   <span className="col-span-1"></span>
                   <span className="col-span-1.5"></span>
-                  <span className="col-span-1.5"></span>
-                  <span className="col-span-2 text-right font-mono text-amber-400">
+                  <span className="col-span-1.5 text-right font-mono text-stone-300">
+                    R$ {fmt(bdiCalc.custoDiretoContratado)}
+                  </span>
+                  <span className="col-span-1.5 text-right font-mono text-amber-400">
                     R$ {fmt(bdiCalc.valorVenda)}
                   </span>
                 </div>
@@ -3995,6 +4006,13 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
     return `${formatarData(valor)} - ${dias[data.getDay()]}`;
   };
 
+  const nomeArquivoRdo = (valor) => String(valor || "RDO")
+    .replace(/[<>:"/\\|?*]/g, "-")
+    .replace(/[\u0000-\u001F]/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim() || "RDO";
+
   const exportarRegistro = (registro) => {
     const linhasFuncionarios = (registro.funcionarios || [])
       .filter((item) => item.nomes || item.quantidade)
@@ -4012,7 +4030,7 @@ function DiarioObraTab({ projeto, cliente, onAtualizar, onSalvar, saving }) {
       .join("");
     const imprimir = window.open("", "_blank", "width=1000,height=800");
     if (!imprimir) return;
-    imprimir.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(registro.titulo || nomeRdo(registro.data))}</title>
+    imprimir.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(nomeArquivoRdo(registro.titulo || nomeRdo(registro.data)))}</title>
       <style>
         @page { size: A4; margin: 0; }
         * { box-sizing: border-box; }

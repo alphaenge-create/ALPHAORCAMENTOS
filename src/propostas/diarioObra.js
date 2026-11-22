@@ -37,7 +37,14 @@ const BORDAS = {
 
 const run = (text, options = {}) => new TextRun({ text: String(text ?? ""), font: "Arial", size: options.size || 20, bold: options.bold, color: options.color || PRETO });
 const paragraph = (children, options = {}) => new Paragraph({ children: Array.isArray(children) ? children : [run(children, options)], alignment: options.alignment || AlignmentType.LEFT, spacing: { before: options.before || 0, after: options.after ?? 100, line: options.line || 260 } });
-const safeName = (value) => String(value || "RDO").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "RDO";
+// Mantém o mesmo nome exibido no título do PDF, trocando apenas caracteres
+// proibidos em nomes de arquivos do Windows por hífens.
+const safeName = (value) => String(value || "RDO")
+  .replace(/[<>:"/\\|?*]/g, "-")
+  .replace(/[\u0000-\u001F]/g, "-")
+  .replace(/\s+/g, " ")
+  .replace(/[. ]+$/g, "")
+  .trim() || "RDO";
 const moneyless = (value) => String(value || "");
 
 const cell = (text, options = {}) => new TableCell({ children: [paragraph(text, { size: options.size || 18, bold: options.bold, color: options.color, alignment: options.alignment })], width: options.width ? { size: options.width, type: WidthType.DXA } : undefined, columnSpan: options.columnSpan, shading: options.fill ? { fill: options.fill, type: ShadingType.CLEAR, color: "auto" } : undefined, borders: options.borders || BORDAS, verticalAlign: VerticalAlign.CENTER, margins: { top: 70, bottom: 70, left: 80, right: 80 } });
