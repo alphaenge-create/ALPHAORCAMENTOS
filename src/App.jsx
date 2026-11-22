@@ -3637,18 +3637,15 @@ export default function App() {
                     </span>
                   </div>
                 )}
-                <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-900 text-white text-sm font-semibold uppercase tracking-wider">
-                  <span className="col-span-4">VALOR FINAL DE VENDA</span>
-                  <span className="col-span-1"></span>
-                  <span className="col-span-1"></span>
-                  <span className="col-span-1"></span>
-                  <span className="col-span-2 text-right font-mono text-stone-300">
+                <div className="grid gap-2 px-4 py-3 bg-stone-900 text-white text-sm font-semibold uppercase tracking-wider" style={{ gridTemplateColumns: "minmax(0, 1fr) max-content max-content max-content" }}>
+                  <span>VALOR FINAL DE VENDA</span>
+                  <span className="text-right font-mono text-stone-300 whitespace-nowrap">
                     R$ {fmt(bdiCalc.custoDiretoContratado)}
                   </span>
-                  <span className="col-span-2 text-right font-mono text-amber-400">
+                  <span className="text-right font-mono text-amber-400 whitespace-nowrap">
                     R$ {fmt(bdiCalc.valorVenda)}
                   </span>
-                  <span className="col-span-1 text-right font-mono text-emerald-400">
+                  <span className="text-right font-mono text-emerald-400 whitespace-nowrap">
                     R$ {fmt(bdiCalc.valorVenda - bdiCalc.custoDiretoContratado)}
                   </span>
                 </div>
