@@ -2099,7 +2099,7 @@ export default function App() {
   };
 
   // Abas disponíveis apenas dentro de um projeto ativo
-  const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "cronograma", "histograma", "maoobra", "materiais", "precos"];
+  const abasProjeto = ["cliente", "custo", "planilha", "bdi", "precovenda", "cronograma", "diario", "histograma", "maoobra", "materiais", "precos"];
   const tabEhDeProjeto = abasProjeto.includes(tab);
 
   return (
@@ -2449,25 +2449,12 @@ export default function App() {
                 </div>
               </div>
             </div>
-            {projetoAtivo && tabEhDeProjeto && (
-              <div className="p-2 border-t border-stone-200">
-                <button
-                  type="button"
-                  onClick={() => salvarProjeto(projetoAtivo.id)}
-                  disabled={busy || !loaded}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium bg-stone-900 text-white rounded-md hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={`Salvar o orçamento ${projetoAtivo.nome} e seu Banco de Preços`}
-                >
-                  <Save size={14} /> {busy ? "Salvando..." : "Salvar orçamento"}
-                </button>
-              </div>
-            )}
           </div>
         </aside>
 
         <main className="min-w-0 flex-1">
         {/* HEADER */}
-        <header className="flex items-center justify-between mb-6 gap-4">
+        <header className="sticky top-0 z-40 -mx-1 px-1 py-3 mb-6 flex items-center justify-between gap-4 bg-stone-50/95 backdrop-blur-sm border-b border-stone-200">
           <div className="min-w-0 flex items-center gap-3">
             <img
               src={alphaLogo}
@@ -2490,6 +2477,17 @@ export default function App() {
               </span>
             )}
             <span className="text-xs text-stone-400 min-h-4">{status}</span>
+            {projetoAtivo && tabEhDeProjeto && (
+              <button
+                type="button"
+                onClick={() => salvarProjeto(projetoAtivo.id)}
+                disabled={busy || !loaded}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={`Salvar o orçamento ${projetoAtivo.nome} e seu Banco de Preços`}
+              >
+                <Save size={13} /> {busy ? "Salvando..." : "Salvar orçamento"}
+              </button>
+            )}
             <button
               type="button"
               onClick={conectarGoogleDrive}
