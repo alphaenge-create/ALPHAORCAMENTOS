@@ -1760,6 +1760,7 @@ export default function App() {
     if (key === "unidade") return item.unidade || "";
     if (key === "quantidade") return quantidade;
     if (key === "custoTotal") return valorCustoItem(item, "total");
+    if (key === "diferenca") return total - valorCustoItem(item, "total");
     if (key === "unitario") return unitario;
     return total;
   };
@@ -1771,6 +1772,7 @@ export default function App() {
     if (key === "unidade") return insumo.unidade || "";
     if (key === "quantidade") return quantidade;
     if (key === "custoTotal") return quantidade * insumoValorUnitario(insumo, cpus, catalogMap);
+    if (key === "diferenca") return quantidade * (unitario - insumoValorUnitario(insumo, cpus, catalogMap));
     if (key === "unitario") return unitario;
     return quantidade * unitario;
   };
@@ -1780,6 +1782,7 @@ export default function App() {
     if (key === "estrutura") return etapa.nome || "";
     if (key === "quantidade") return itens.reduce((total, item) => total + num(item.quantidade), 0);
     if (key === "custoTotal") return itens.reduce((total, item) => total + valorCustoItem(item, "total"), 0);
+    if (key === "diferenca") return itens.reduce((total, item) => total + valorVendaItem(item, "total") - valorCustoItem(item, "total"), 0);
     if (key === "total") return itens.reduce((total, item) => total + valorVendaItem(item, "total"), 0);
     return "";
   };
@@ -3506,12 +3509,13 @@ export default function App() {
                 </div>
               )}
               <div className="grid grid-cols-12 gap-2 px-4 py-2.5 bg-stone-100 border-b border-stone-200 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
-                <BotaoOrdenacao coluna="estrutura" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-5">Estrutura (Etapa / CPU / Insumo)</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="estrutura" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-4">Estrutura (Etapa / CPU / Insumo)</BotaoOrdenacao>
                 <BotaoOrdenacao coluna="unidade" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="center">Und</BotaoOrdenacao>
-                <BotaoOrdenacao coluna="quantidade" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Qtd Prop.</BotaoOrdenacao>
-                <BotaoOrdenacao coluna="unitario" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Preço Unit Venda</BotaoOrdenacao>
-                <BotaoOrdenacao coluna="custoTotal" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Total Custo</BotaoOrdenacao>
-                <BotaoOrdenacao coluna="total" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1.5" align="right" direcaoInicial="desc">Total Venda</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="quantidade" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="right" direcaoInicial="desc">Qtd Prop.</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="unitario" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="right" direcaoInicial="desc">Preço Unit Venda</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="custoTotal" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-2" align="right" direcaoInicial="desc">Total Custo</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="total" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-2" align="right" direcaoInicial="desc">Total Venda</BotaoOrdenacao>
+                <BotaoOrdenacao coluna="diferenca" ordenacao={ordenacaoPlanilhaVenda} onOrdenar={(key, inicial) => setOrdenacaoPlanilhaVenda((atual) => alternarOrdenacao(atual, key, inicial))} className="col-span-1" align="right" direcaoInicial="desc">Diferença</BotaoOrdenacao>
               </div>
 
               <div className="divide-y divide-stone-200 max-h-[600px] overflow-y-auto">
@@ -3538,15 +3542,18 @@ export default function App() {
                           onClick={() => setEtapasExpandidas(p => ({ ...p, [etapaId]: !isEtapaAberta }))}
                           className="grid grid-cols-12 gap-2 px-4 py-2 bg-stone-200/60 text-stone-800 text-xs font-bold items-center uppercase tracking-wide cursor-pointer hover:bg-stone-200 select-none"
                         >
-                          <span className="col-span-9 flex items-center gap-1.5">
+                          <span className="col-span-7 flex items-center gap-1.5">
                             {isEtapaAberta ? <ChevronDown size={14} className="text-stone-500" /> : <ChevronRight size={14} className="text-stone-500" />}
                             {numEtapa}. {etapa.nome}
                           </span>
-                          <span className="col-span-1.5 text-right font-mono text-stone-600">
+                          <span className="col-span-2 text-right font-mono text-stone-600">
                             R$ {fmt(totalEtapaCusto)}
                           </span>
-                          <span className="col-span-1.5 text-right font-mono text-stone-900">
+                          <span className="col-span-2 text-right font-mono text-stone-900">
                             R$ {fmt(totalEtapaComBdi)}
+                          </span>
+                          <span className="col-span-1 text-right font-mono text-emerald-700">
+                            R$ {fmt(totalEtapaComBdi - totalEtapaCusto)}
                           </span>
                         </div>
 
@@ -3566,17 +3573,18 @@ export default function App() {
                                 onClick={() => setCpusExpandidas(p => ({ ...p, [itemId]: !isCpuAberta }))}
                                 className="grid grid-cols-12 gap-2 px-4 py-2 bg-white text-xs items-center font-semibold text-stone-700 pl-8 cursor-pointer hover:bg-stone-50 select-none"
                               >
-                                <span className="col-span-5 truncate text-stone-900 flex items-center gap-1">
+                                <span className="col-span-4 truncate text-stone-900 flex items-center gap-1">
                                   {isCpuAberta ? <ChevronDown size={13} className="text-stone-400 shrink-0" /> : <ChevronRight size={13} className="text-stone-400 shrink-0" />}
                                   {numCpu}. {item.codigo ? `[${item.codigo}] ` : ""}{item.servico || item.descricao}
                                 </span>
                                 <span className="col-span-1 text-center font-mono text-stone-400">{item.unidade}</span>
-                                <span className="col-span-1.5 text-right font-mono">{formatarPrecisao(qtdItem)}</span>
-                                <span className="col-span-1.5 min-w-0 break-words text-right font-mono text-stone-500">R$ {formatarPrecisao(totalCpuComBdi)}</span>
-                                <span className="col-span-1.5 text-right font-mono text-stone-600">R$ {fmt(totalCpuCusto)}</span>
-                                <span className="col-span-1.5 text-right font-mono text-stone-900">
+                                <span className="col-span-1 text-right font-mono">{formatarPrecisao(qtdItem)}</span>
+                                <span className="col-span-1 min-w-0 break-words text-right font-mono text-stone-500">R$ {formatarPrecisao(totalCpuComBdi)}</span>
+                                <span className="col-span-2 text-right font-mono text-stone-600">R$ {fmt(totalCpuCusto)}</span>
+                                <span className="col-span-2 text-right font-mono text-stone-900">
                                   R$ {fmt(resumoVenda.total)}
                                 </span>
+                                <span className="col-span-1 text-right font-mono text-emerald-700">R$ {fmt(resumoVenda.total - totalCpuCusto)}</span>
                               </div>
 
                               {isCpuAberta && (item.insumos || []).length > 0 && (
@@ -3591,18 +3599,19 @@ export default function App() {
 
                                       return (
                                       <div key={insumo.id || idxInsumo} className="grid grid-cols-12 gap-2 px-4 py-1.5 text-[11px] items-center text-stone-600 pl-14 hover:bg-stone-100/40">
-                                        <span className="col-span-5 truncate uppercase font-sans text-stone-500">
+                                        <span className="col-span-4 truncate uppercase font-sans text-stone-500">
                                           {numInsumo}. <span className="text-[9px] font-mono font-bold text-stone-400 border border-stone-200 px-1 py-0.5 rounded bg-white mr-1">{insumo.tipo}</span> {insumo.descricao}
                                         </span>
                                         <span className="col-span-1 text-center font-mono text-stone-400 uppercase text-[10px]">{insumo.unidade || "un"}</span>
-                                        <span className="col-span-1.5 text-right font-mono text-stone-600">
+                                        <span className="col-span-1 text-right font-mono text-stone-600">
                                           {formatarPrecisao(qtdCalculada)}
                                         </span>
-                                        <span className="col-span-1.5 text-right font-mono text-stone-400">R$ {fmt(precoVendaInsumo)}</span>
-                                        <span className="col-span-1.5 text-right font-mono text-stone-500">R$ {fmt(custoTotalInsumo)}</span>
-                                        <span className="col-span-1.5 text-right font-mono font-medium text-blue-700">
+                                        <span className="col-span-1 text-right font-mono text-stone-400">R$ {fmt(precoVendaInsumo)}</span>
+                                        <span className="col-span-2 text-right font-mono text-stone-500">R$ {fmt(custoTotalInsumo)}</span>
+                                        <span className="col-span-2 text-right font-mono font-medium text-blue-700">
                                           R$ {fmt(vendaTotalInsumo)}
                                         </span>
+                                        <span className="col-span-1 text-right font-mono text-emerald-700">R$ {fmt(vendaTotalInsumo - custoTotalInsumo)}</span>
                                       </div>
                                       );
                                   })}
@@ -3629,15 +3638,18 @@ export default function App() {
                   </div>
                 )}
                 <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-stone-900 text-white text-sm font-semibold uppercase tracking-wider">
-                  <span className="col-span-5">VALOR FINAL DE VENDA</span>
+                  <span className="col-span-4">VALOR FINAL DE VENDA</span>
                   <span className="col-span-1"></span>
                   <span className="col-span-1"></span>
-                  <span className="col-span-1.5"></span>
-                  <span className="col-span-1.5 text-right font-mono text-stone-300">
+                  <span className="col-span-1"></span>
+                  <span className="col-span-2 text-right font-mono text-stone-300">
                     R$ {fmt(bdiCalc.custoDiretoContratado)}
                   </span>
-                  <span className="col-span-1.5 text-right font-mono text-amber-400">
+                  <span className="col-span-2 text-right font-mono text-amber-400">
                     R$ {fmt(bdiCalc.valorVenda)}
+                  </span>
+                  <span className="col-span-1 text-right font-mono text-emerald-400">
+                    R$ {fmt(bdiCalc.valorVenda - bdiCalc.custoDiretoContratado)}
                   </span>
                 </div>
               </div>
